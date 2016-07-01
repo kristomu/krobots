@@ -1,0 +1,27 @@
+; Test feedback using radar to keep at distance
+; Veer left if delta towards enemy has increased, otherwise right.
+
+; Obviously this doesn't like walls and makes us really easy to hit. But
+; if we could add a bit of permutation, we could lock on to an enemy while
+; making it very hard for that enemy to hit us.
+
+opo p_throttle, 100
+
+#def old_radar
+#def delta
+
+!main
+	opo p_throttle, 100
+	ipo p_radar, ax
+	mov delta, ax
+	sub delta, old_radar
+	mov old_radar, ax
+
+	err delta
+	cmp delta, 0
+	je !main
+	opo p_steering, 10
+
+	;delay 10
+
+	jmp !main

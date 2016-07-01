@@ -1,0 +1,86 @@
+#config scanner=5
+#config engine=0 ; gives two points
+#config heatsinks=0
+#config weapon=4 ;takes two
+#config armor=3
+
+; TOURNAMENT RESULTS: 70% normalized score in Standard.
+
+opo p_throttle, 100
+opo 22, 2 ; lay a mine, can't hurt
+opo 22, 5 ; and another
+mov ax, 1
+int 3
+mov dx, 64
+
+!loop
+opo p_steering, 10
+opo 17, dx ; set arc to dx
+ipo 7, fx  ; scan
+cmp fx, 1600 ; anything found?
+ja !update ; no.
+
+!found
+; BLUESKY: Abort early if we're close. 
+cmp dx, 3 ; narrow enough?
+jle !fintro ; fire
+; else
+; find quadrant
+; cases: * -2: -bx + -bx. *-1: -bx. *0, no change. *1: bx, *2, bx + bx
+; incorporating the sar:
+; cases: * -2: -bx. -1: -bx sar 1. *0: 0. *1 bx sar. *2 bx
+
+; Yuck
+cmp @3, 0
+je !noturn		; Fall 0
+mov bx, dx		; != 0
+jgr !plus		; greater than 0?
+neg bx			; no, rotate leftwards by negating
+cmp @3, -1		; -1?
+jgr !resume		; no, -2, we're done
+!plus			; -1 fall through to here
+cmp @3, 2		; less than 2? (i.e -1 and 1)
+je !resume		; no, 2, we're done
+sar bx, 1 		; -1 or 1, only move half as far
+
+!resume
+opo 12, bx
+!noturn
+sar dx, 2 ; quarter angle
+	  ; (optimal is fifth angle (-2, -1, 0, 1, 2: 5 members), but that doesn't lend
+	  ; to easy multiplication
+;jls !left
+je !loop
+jne !loop
+
+!update
+cmp dx, 64 ; if greatest parameter
+je !flip  ; then flip
+shl dx, 2  ; else increase width
+jne !loop
+je !loop
+
+!flip
+opo 12, 128 ; flip
+jne !loop
+je !loop
+
+!fintro
+ipo 2, fx
+cmp fx, 400
+jgr !loop
+
+!fire
+ipo 7, fx  ; scan
+cmp fx, 1600 ; exited?
+ja !loop     ; yes, done
+cmp @3, 0
+je !af
+mov bx, @3
+sar bx, 1
+opo 12, bx
+!af
+opo 15, @3 ; for some reason, this is better than just opo 15
+; firing goes here
+je !fire
+jne !fire

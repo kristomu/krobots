@@ -1,0 +1,99 @@
+; simple accuracy following targeting
+; now uses asin table
+
+; 576 against coroner so far with speed=25
+; 726 with speed=7
+
+; TOURNAMENT RESULTS: 60% normalized score in Standard.
+
+mov dx, 64
+opo 17, dx
+opo p_throttle, 13
+mov ax, 1
+int 3
+
+!loop
+	opo 14, 10
+	ipo 7, fx
+	cmp fx, 5000
+	jgr !widen
+
+!narrow
+	; always center by accuracy
+	cmp @3, 0
+	je !continue
+
+	mov bx, dx
+;	sar bx, 1
+	mpy bx, @3
+	sar bx, 1
+	opo 12, bx
+
+!continue
+	; angle comparison 1
+
+;	mov @393, 16	64
+;	mov @392, 32
+;	mov @391, 78	16
+;	mov @390, 160
+;	mov @389, 324	4
+
+	cmp dx, 64
+	jne !ii
+	cmp fx, 16
+	jle !fire
+!ii
+	cmp dx, 16
+	jne !iii
+	cmp fx, 78
+	jle !fire
+!iii
+	cmp dx, 4
+	jb !fire
+	jne !cont
+	cmp fx, 324
+	jle !fire
+!cont
+
+
+	sar dx, 2 ; narrow it down by four otherwise
+	opo 17, dx
+	jmp !loop
+
+!widen
+	cmp dx, 64
+	je !flip
+!shift
+	shl dx, 2
+
+; check ii: dx is either 64, 16, 4, or 1.
+	cmp dx, 64
+	je !done
+	cmp dx, 16
+	jne !sii
+	cmp fx, 16 ; shift up to 64
+	jb !shift
+!sii
+	cmp fx, 4
+	jne !siii
+	cmp fx, 78 ; shift up to 16
+	jb !shift
+!siii
+	cmp fx, 324 ; shift up to 4
+	jb !shift
+
+!done
+	opo 17, dx
+	jmp !loop
+
+!flip
+	opo 12, 128
+	jmp !loop
+
+!fire
+	;err dx
+	;delay 200
+	;err fx
+	;delay 200
+	opo 15, @3
+	jmp !loop

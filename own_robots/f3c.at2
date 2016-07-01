@@ -1,0 +1,263 @@
+; Hrairoo, v 3
+; Uses accuracy-based scan with rounding up, so should never lose a lock against
+; a sitting duck (unless it slips between the angles).
+
+; Base is 700 with 30k rounds against schall with z1.
+
+#def scanarc
+#def precision
+#def minarc
+#def maxarc
+#def debug
+
+#def rotation
+
+#def oldaccuracy
+
+mov ax, 1700
+mov rotation, 0
+mov scanarc, 0
+mov maxarc, 64
+mov precision, maxarc
+mov minarc, 0		; To Be Replaced by dynamic allocation
+
+mov debug, 0
+
+jmp !main_new_precis
+
+!main_prime
+	; First "call" the arc clamping to prevent arcs from going out of
+	; bounds.
+	;jmp !clampArcs
+
+;!main_past_clamp
+
+	; Then update the scan arc if our last precision call changed our
+	; precision.
+	;cmp scanarc, precision
+	;je !main_after_upd
+	;call !updateScanArc
+
+!main_after_upd
+
+	; Did the last round around produce a lock? If so, update oldaccuracy.
+	cmp ax, 1500
+	jgr !main_scan
+	mov oldaccuracy, @3
+
+!main_scan
+	
+	err ax
+	cmp scanarc, precision
+	je !qqq
+	call !updateScanArc
+!qqq
+	err ax
+	; Then scan to see if we've got the enemy or lost it.
+	; If we have the enemy, narrow down based on accuracy (produce new
+	;  precision), otherwise extend/flip; in any case, get the new precision
+	; which states at which resolution we have the enemy.
+
+	ipo p_scan, ax
+	cmp ax, 1500
+	jgr !scanExtend
+	jle !scanNarrow
+
+!main_new_precis
+	cmp scanarc, precision
+	je !qaq
+	call !updateScanArc
+!qaq
+	jmp !clampArcs
+
+!main_old_precis
+
+	; Then determine if precision is small enough to fire. If it is, do so.
+	; Otherwise, rotate and go back to start.
+
+	cmp precision, minarc
+	jle !fire
+	
+	; Note that in the case of having a rotation different from 0, we
+	; cannot null it after rotation. Assume that the enemy is at accuracy 
+	; +2. If the cache is to hold, then next time (after rotation) the enemy
+	; is still at +2, which means we have to rotate once more. 
+	cmp rotation, 0		; If there's no angle to rotate, then no point
+				; either.
+	je !main_prime		; Change when we add movement code.
+	opo p_trotate, rotation
+
+	jmp !main_prime
+
+; ------------------ SUBROUTINES ----------------------
+
+!clampArcs
+	; Limit current precision to 1..64. Since this is after the firing,
+	; we can limit from below to 1; the call to the scan proper will narrow
+	; it down to 0 if we have confidence.
+	; What we really want to do here is to set the arc so that the accuracy
+	; region encompasses the precision we have. The intuitive way to do that
+	; is to keep the enemy centered and then expand to 2 * minarc if we're
+	; <= minarc. We do this here, though we should also rotate to keep it
+	; centered somewhere else.
+
+	; We no longer need to limit from below. It might be a good idea to
+	; set scanarc to 2 * minarc if our precision is below minarc, the first
+	; time, since anything below minarc is just a waste of scan resolution.
+
+	; Limit from above
+	cmp precision, maxarc
+	jle !main_old_precis
+	mov precision, maxarc
+	jmp !main_old_precis
+
+; --
+
+!updateScanArc
+	; We're going to scan with precision, since we know the enemy is
+	; within that range. But since we're going to scan with it, we should
+	; update the scanarc parameter first.
+	cmp precision, minarc
+	;jle !main_after_upd
+	jle !return
+	mov scanarc, precision
+	opo p_arc, scanarc
+	;jmp !main_after_upd
+!return
+	ret
+
+; --
+
+!scanExtend
+	; The full routine here will have logic like this: If we had an enemy,
+	; and we lost him, and he wasn't last seen just by our scanner range,
+	; then flip towards the accuracy he was just before we lost him. 
+	; Otherwise flip in some predetermined direction (doesn't matter which),
+	; and if we can extend our arc, do so.
+	; As it is, this just implements the latter.
+
+	; At this point, we have synchronized scanarc and precision. Since it's
+	; quicker to base our decisions upon precision, we do that here.
+	; We may be able to unify this and clamp-from-below later.
+
+	; TODO: Error here for debugging purposes.
+
+	; Always flips to the right, currently.
+
+	mov rotation, precision	; Rotate to the right by half an arc
+	cmp precision, maxarc
+	jae !main_new_precis
+	;jmp !boom
+	cmp precision, 0
+	jgr !aok
+	inc precision
+	!aok
+	shl precision, 2	; Multiply by 4 since the center covers 1/4.
+	jmp !main_new_precis
+	
+!scanNarrow
+	; If we have a lock (minimum arc) and accuracy hasn't changed, then
+	; there's no reason to calculate when we know what the result will be,
+	; so don't. Otherwise, calculate.
+
+	cmp precision, minarc
+	jgr !sNarrowCalc
+	cmp oldaccuracy, @3
+	jne !sNarrowCalc
+	je !main_old_precis
+
+!sNarrowCalc
+	; This is it. Input is current scanarc/precision (they're synched, but
+	; precision makes more sense) and accuracy, output is new precision
+	; and rotation. 
+	; The trick is that we round up appropriately before dividing, since
+	; shr by itself rounds down. Apart from that, it's a block-five narrow,
+	; which is 1/4 of the space for accuracies 0, -1, 1, and 1/8 for 2 and
+	; -2. Because of the symmetry, we only code for one half, then negate
+	; as appropriate afterwards.
+
+	mov scanarc, precision
+	
+	cmp precision, 2	; Handle corner cases of 2, 1, and 0.
+	jle !narrow_to_zero
+
+	cmp @3, 1
+	jgr !scanNarrowTwos
+	je  !scanNarrowOnes
+	cmp @3, -1
+	jls !scanNarrowTwos
+	je  !scanNarrowOnes
+
+	; Fall through if 0; narrow the area straight ahead
+
+	mov rotation, 0		; Straight ahead
+	add precision, 3	; Round up.
+	shr precision, 2	; Size 1/4 centered on 0
+	jmp !main_new_precis
+
+!narrow_to_zero
+	; Handle corner case of 2 and 1. Since 0 is considered +/- 0.5, the 
+	; strategy is simple: If accuracy is zero, don't rotate, otherwise 
+	; rotate by accuracy, halving this if 1.
+
+	cmp precision, 2
+	mov precision, 0
+	jz !main_new_precis	; Case 0
+	mov rotation, @3
+	je !main_new_precis	; Case 2
+	sar rotation, 1
+	jne !main_new_precis	; Case 1
+
+!scanNarrowTwos
+	mov rotation, precision
+	add precision, 7	; Round up
+	shr precision, 3	; 1/8
+	sub rotation, precision	; 7/8
+
+	jmp !scanNarrowNeg	; Size 1/8 centered on +/- 7/8
+
+!scanNarrowOnes
+	; Can't be generalized to a form similar to scanNarrowTwos for some
+	; reason. Don't know why.
+	mov rotation, precision
+	add precision, 3        ; Round up
+	shr rotation, 1         ; Now 1/2 to the right
+	shr precision, 2        ; Scanarc size 1/4
+
+	; Fall through to scanNarrowNeg(ate)
+
+!scanNarrowNeg
+	; Negate if symmetry demands it.
+	cmp @3, 0
+	jae !main_new_precis
+	neg rotation
+	jmp !main_new_precis
+
+; --
+
+!fire
+	; Rotate according to precision, fire, and then rotate back.
+	; Speed up once we see it works.
+
+	opo p_trotate, rotation
+
+	cmp debug, 0
+	je !skip
+
+	opo p_arc, 0
+	ipo p_scan, ax
+	cmp ax, 1500
+	jgr !boom
+	opo p_arc, scanarc
+	delay 300
+!skip
+	opo 15
+	neg rotation
+	opo p_trotate, rotation
+	neg rotation
+	mov precision, 2
+	jmp !main_prime
+
+!boom
+	delay 150
+	int 0

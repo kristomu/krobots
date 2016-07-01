@@ -1,0 +1,218 @@
+#config mines=0
+#config weapon=4
+#config armor=2
+#config engine=0
+#config heatsinks=1
+#config scanner=5
+#config shield=0
+
+; Test for prediction tables. (Accuracy-based prediction tables didn't seem to
+; work.. at least not yet.)
+
+; Close enough if you discount the random shots done just before the other hits
+; the wall.
+
+; Reason how we're to use the triangle calculation for firing. The 
+; implementation should be simple enough. We need to have each quintant so that
+; we can fire and hit with every shot. The worst case is in the middle, which
+; covers a fourth of the total area. Though with dynamic size we have to handle
+; reductions well, but that's what the bx passthrough idea is for; we just use
+; the calculated center as the point to fire.
+; Okay, an arctan table with a width of 4 * 14 (or whatever the acceptable 
+; radius is) should do the trick. Since the calculations use a half-arc, we 
+; might think it should be 2 * .., but the output is also just a half-angle,
+; so these cancel out.
+
+; Results are still not good enough, we're at .37. This is due to a condition
+; where it scans yet fails to hit every time. It happens with probability 0.1.
+
+#def tnote
+#def scanarc
+#def oldacc
+#def minarc
+
+;mov tnote, !table
+;shl tnote, 2
+;add tnote, 1024
+
+mov scanarc, 64
+opo p_arc, scanarc
+
+; Simple division scanner. To be replaced afterwards.
+
+!loop
+
+	delay 100
+	err scanarc
+	opo p_arc, scanarc
+	ipo p_scan, ax
+	;err ax
+	cmp ax, 1500    ; Found something?
+	jle !narrow	; Yes, narrow down
+	jgr !extend	; No, extend
+
+!extend
+	; If we have accuracy information, then flip in the direction that
+	; dictates. Usually that accuracy information is -2 or 2.
+	; If we do not have any, it really doesn't matter in which direction we
+	; flip.
+
+	mov bx, scanarc
+	cmp oldacc, 0
+	jgr !fliponwards
+	neg bx
+!fliponwards
+	opo p_trotate, bx
+	cmp scanarc, 64
+	jae !loop
+	; TEST CODE
+	cmp scanarc, 0
+	ja !onwards
+	mov scanarc, 1
+!onwards
+	shl scanarc, 2
+	opo p_arc, scanarc
+	je !loop
+	jne !loop
+
+!narrow
+	cmp scanarc, 4
+	jls !simplediv
+	mov oldacc, @3
+	cmp @3, 1
+	jgr !narrowtwos
+	je !narrowones
+	cmp @3, -1
+	jls !narrowtwos
+	je !narrowones
+
+	shr scanarc, 1
+	je !norot
+	jne !norot
+
+!narrowones
+	shr scanarc, 1
+	mov bx, scanarc
+	shr scanarc, 1
+
+	je !finalize
+	jne !finalize
+
+!narrowtwos
+	mov bx, scanarc
+	shr scanarc, 3
+	sub bx, scanarc
+!finalize
+	cmp @3, 0
+	jae !forwards
+	neg bx
+!forwards
+	opo p_trotate, bx
+	; Must really be +/-4, the weapon can't turn any more than that.
+	; But this may do better with moving targets since our tables may
+	; exceed the number.. On the other hand, aggregation could turn in
+	; our favor (-8 + +5 for instance) and could go faster!
+!norot
+	; Experiment with dynamically changing minimum sizes
+	; Should fit the purpose of accurate targeting, not keeping a lock
+	; at all costs.
+	; Set empirically, but may have potential for tweaking later.
+	;err scanarc
+	;mov minarc, 1500
+	;sub minarc, ax
+	;shr minarc, 8
+	; NOTE!!
+	mov minarc, 4
+	cmp minarc, 64
+	jle !maxdone
+	mov minarc, 64
+	jgr !mindone
+!maxdone
+	cmp minarc, 0
+	jgr !mindone
+	mov minarc, 1
+
+!mindone
+	;err minarc
+	cmp scanarc, minarc
+	je !firenae
+	jgr !ok
+	mov scanarc, minarc
+	;err scanarc
+!ok
+	opo p_arc, scanarc
+	cmp scanarc, minarc
+	je !fire
+jne !loop
+
+!simplediv
+	; Simple division
+	; TODO: Rotate to keep up in any case
+	; TODO: Handle case with center by jumping up to the shr (min is set
+	; later)
+	; If we get here, the scanarc is less than 4. Therefore, we should
+	; rotate and center in a binary fashion, since ATR always rounds down.
+
+	shr scanarc, 1
+	mov bx, 0
+	cmp @3, 0
+	je !secondp
+	mov bx, scanarc
+	jgr !secondp
+	neg bx
+!secondp
+	;err bx
+	je !forwards
+	jne !forwards
+
+
+; Found: Firing with confidence is a good strategy. It only decreases the hit
+; accuracy slightly and kills targets more quickly.
+;	Confidence elements: Accuracy rating (how far off center he is), speed,
+;		heading.
+;	It would be really nice if we could find a way of replicating the .76
+;	performance on all quintants. But I have the hunch the effect is self-
+;	selecting: since only the easy targets get in center, they'll be hit
+;	more, driving up the accuracy.
+
+!fire
+	cmp @13,0 ; If stationary, no need to compensate
+	jne !loop
+
+	; NICE TRICK: Use bx (where we were going to put the next-narrow's
+	; center) as firing resolution - then just skip through the scanning
+	; routine to fire instead of narrow!
+
+	;opo p_arc, 1
+	ipo p_scan, ax
+	cmp ax, 1500
+	jgr !loop
+	;mov bx, @3
+	;err bx
+!fireii
+	;err bx
+	; Works because a scanner arc of 2 (total of 4 degrees) divides us
+	; into zones: 0 spans from -1 to +1 inclusive, and .. hm.
+	; TODO: Reason in this manner more effectively.
+	; 0 spans 1/4, as do +/-1. +/-2 spans 1/8
+	; So if we use a scanarc of 4, we can use with impunity?
+	; No, we need a scanarc of 2 because we can only address the weapon
+	; from +4 to -4. Really what we need here is a shift that takes
+	; scanarc into account.
+	delay 50
+	;err bx
+	opo 15, bx
+	delay 50
+	opo 15
+	;delay 50
+	;opo 15
+	;delay 10
+	;or minarc, 1
+	jmp !loop
+
+!firenae
+	;err scanarc
+	opo 15
+	or minarc, 1
+	delay 15
+	jmp !loop

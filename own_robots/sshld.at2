@@ -1,0 +1,38 @@
+; Example of using feedback to control heat - shields
+; This may count as proportional control, but is probably closer to on-off.
+
+#config weapon=0
+#config armor=0
+#config engine=3
+#config shield=3
+
+#def maxheat 384
+#msg Hasta la vista, baby
+
+err 5
+
+opo 24, 1 ; shields up
+opo p_trotate, 64
+;opo p_throttle, 100
+
+!loop
+	opo p_steering, 1
+	ipo p_random, ax	; Get a random number
+	mov bx, ax
+	and ax, 255		; Clamp it to 0.255
+	and bx, 127
+	add ax, bx
+	ipo 2, bx		; heat sensor
+	cmp ax, bx		; Is fortune kind?
+	jle !off		; No, turn the shield off
+	cmp bx, 70		; Else check if we're cool enough
+	jle !on			; If so, turn the shield on
+jmp !loop
+
+!off
+	opo 24, 0
+jmp !loop
+
+!on
+	opo 24, 1
+jmp !loop

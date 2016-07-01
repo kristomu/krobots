@@ -1,0 +1,59 @@
+; Example of feedback applied to drive
+; Will unfortunately tend to center
+; Approximates Euclidean distance as dx + dy - 0.5 * min(dx, dy)
+
+#config weapon=0
+#config engine=5
+#config armor=0 ; Wroom!
+
+#def delta
+#def last
+
+jmp !main
+
+!dist
+	int i_locate ; Now position is in ex, fx
+	sub ex, 500  ; dx
+	sub fx, 500  ; dy
+	cmp ex, 0
+	jgr !fxchk
+	neg ex
+!fxchk
+	cmp fx, 0
+	jgr !doneinvert
+	neg fx
+!doneinvert
+
+	mov bx, ex
+	cmp fx, ex
+	jgr !continue
+	mov bx, fx	; bx = min(dx, dy)
+!continue
+	shr bx, 1	; * 0.5
+	add ex, fx	; ex = dx + dy
+	sub ex, bx	; ex = (dx + dy) - (0.5 * min(dx, dy))
+	ret
+
+!main
+	opo p_throttle, 100
+	call !dist
+	;err ex		; max result is about 500
+			; Now just turn. If we're at 400 or more, turn all the
+			; way
+	mov delta, ex
+	sub delta, last
+	mov last, ex
+	err delta
+	cmp delta, 0
+	jgr !dcont
+	jmp !main
+	neg delta
+	!dcont
+	;shl delta, 1
+	opo p_steering, delta
+	jmp !main
+
+!turnman
+	opo p_steering, 128
+	delay 40
+jmp !main

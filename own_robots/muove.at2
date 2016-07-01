@@ -1,0 +1,39 @@
+
+mov ax, 1
+int i_keepshift
+
+opo p_throttle, 100
+err ax
+mov ex, 10
+mov fx, 100
+
+mov dx, 32
+opo 17, dx ; set scan width
+
+!scanloop
+ipo 7, fx ; Scan
+cmp fx, 1600 ; Anything?
+jb !something
+opo 12, 32 ; Shift
+jmp !scanloop
+
+!something
+ipo 3, ax	; current heading
+add ax, @2	; turret pointing at
+opo p_steering, ax
+jmp !scanloop
+
+!loop
+cmp fx, 0
+jgr !continue
+;mov fx, 100
+;mov ax, ex
+;ipo p_random, bx
+;and bx, 3
+;add ax, bx
+ipo p_sonar, ax
+opo p_steering, ax
+!continue
+dec fx
+je !loop
+jne !loop

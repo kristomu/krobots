@@ -1,0 +1,127 @@
+; Experiments in leading-evasion veering.
+; This is amusing. A Neat to rule all Neats experiments in scruffy methods!
+
+opo p_throttle, 100
+
+#def xold
+
+#def wallmin
+#def wallmax
+
+mov wallmin, 100
+mov wallmax, 900
+
+mov xold, 2
+
+!main
+	opo p_throttle, 100
+	; Generate 1/f noise according to this recurrence
+	; x_t = (x_t-1 + x_t-1^2) mod 1
+	; scaled up to 255.
+	; ((Oops, was x_t-1 + x_t-1^2) mod 1. But this works against fsf!)
+	mov ax, xold
+	mpy ax, ax
+	add ax, xold
+	and ax, 255
+	mov xold, ax
+	mov bx, 255
+	sub bx, ax
+	mov ax, bx
+
+	; Ax is a possible direction to turn.
+
+	; Now check if we're close to any side
+	; If so, restrict the turning angles. A bit neat, but the scruffy
+	; solution is longer.
+	; Later, to squeeze out cycles, we could go here only if we're in
+	; the danger zone.
+
+	; We need a probabilistic solution here so it doesn't get caught up
+	; in the edges.
+	int i_locate
+	; ex,fx is now our location (X,Y)
+	; east/west MUST be checked before north/south
+	cmp ex, wallmin
+	jle !west
+	cmp ex, wallmax
+	jgr !east
+	cmp fx, wallmin
+	jle !north
+	cmp fx, wallmax
+	jle !south
+
+	; Probabilistic evasion
+	; Should be integrated, but test for now
+	;sub ex, wallmin
+
+
+	; Okay,we're not, so do our thing
+
+	opo p_steering, ax
+	delay 20
+	jmp !main
+
+!west
+	cmp fx, wallmin
+	jle !northwest
+	cmp fx, wallmax
+	jgr !southwest
+
+	; Limit to east: 0..128
+	and ax, 127
+	jmp !fixed
+
+!east
+	cmp fx, wallmin
+	jle !northeast
+	cmp fx, wallmax
+	jgr !southeast
+
+	; Limit to west: 128..256
+	and ax, 127
+	add ax, 128
+	jmp !fixed
+
+!north
+	; Limit to south: 64..192
+	and ax, 127
+	add ax, 64
+	jmp !fixed
+
+!south
+	; Limit to north: 192..64 (Check that this works)
+	and ax, 127
+	add ax, 192
+	jmp !fixed
+
+!northwest
+	; Limit to southeast: 64..128
+	and ax, 63
+	add ax, 64
+	jmp !fixed
+!northeast
+	; Limit to southwest: 128..192
+	and ax, 63
+	add ax, 128
+	jmp !fixed
+!southwest
+	; Limit to northeast: 0..64
+	and ax, 63
+	jmp !fixed
+!southeast
+	; Limit to northwest: 192..0
+	and ax, 63
+	add ax, 192
+	jmp !fixed
+
+!fixed
+	; Okay, now ax is an absolute heading. Get ours and calculate the
+	; correct relative heading.
+
+	mov bx, @1	; Desired heading
+	sub ax, bx	; Get number of degrees to turn.
+
+	opo p_steering, ax ; All done
+	delay 20
+	jmp !main
+

@@ -1,0 +1,11 @@
+#config mines=5
+#config weapon=0
+#config scanner=0
+#config engine=5
+#config heatsinks=0
+
+; Can't make it shorter!
+; (Comments and configs are optional)
+
+opo p_throttle, 100
+opo 22, 15

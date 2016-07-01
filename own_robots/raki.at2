@@ -1,0 +1,86 @@
+;N and OVERHEAT. MONKEYP is another AT-Robot Contestant.
+; If numbers don't add up to 255, then there were one or more ties.
+; RAKI/OVERHEAT 239-14   RAKI/TRACKER  227-11  RAKI/RAKI     120-131
+; RAKI/CIRCLES  99-151   RAKI/RANDMAN3 181-66  RAKI/RAMMER   135-116
+; RAKI/URMINE   87-155   RAKI/OVERH2   245-9   RAKI/SNIPER   214-39
+; RAKI/SWEEPER  225-30   RAKI/SMALL    236-17  RAKI/TRACON   255-0
+; RAKI/CORONER  11-243   RAKI/MONKEYP  46-209  RAKI/1BLOOD1  72-181
+; RAKI/TINY     233-18   RAKI/1BLOOD2  86-165  RAKI/BARABBAS 29-226
+; RAKI/MJ       181-72   RAKI/SCANNER3 27-222  RAKI/SEEKER03 210-44
+; RAKI/SCANNER2 187-65   RAKI/SCANNER  190-61  RAKI/MAX      170-83
+; RAKI/SUCK     255-0    RAKI/TRAC2    255-0   RAKI/KK       255-0
+#msg RakiBot #1 ENTERED!          ; Display message.
+#def Scanner                      ; For targeting improvement
+#def OrigScan                     ; For targeting improvement
+!Start
+MOV Scanner,240                   ; Initial Scanning Variable
+MOV OrigScan, Scanner             ; Reset value.
+MOV AX,1                          ; Toggle interrupt to ON.
+INT 3                             ; Fix turret for scan
+!Main                             ;Main loop. Searches and moves.
+        OPO     p_throttle, 100   ; Run around
+        IPO     6,      ax        ; Check Armor
+        CMP     ax,     6         ; Is it critically low?
+        JLS     !Explosives       ; Yes, let's kamikaze.
+        cmp     Dx,0              ; Does DX show we're still close to a wall?
+        JGR     !Loop2            ; Yes, skip the wall-check.
+        INT     2                 ; Get my position
+        CMP     ex,     75        ; Check for wall (1/4)
+        JLS     !Wall             ; Found a wall
+        CMP     ex,     925       ; Check for wall (2/4)
+        JGR     !Wall             ; Found a wall
+        CMP     fx,     75        ; Check for wall (3/4)
+        JLS     !Wall             ; Found a wall
+        CMP     fx,     925       ; Check for wall (4/4)
+        JGR     !Wall             ; Found a wall
+        sub     Dx,1              ; Decrements delay-loop
+!Loop2
+        IPO     2,      ax        ; Check heat sensor
+        CMP     ax,     200       ; is it over 200?
+;        JGR     !Main             ; It's over 200. Don't shoot.
+         JLS     !Loop3
+                    opo     14,     8       ; turn 8 degrees to the right.
+                    JMP !Main
+!Loop3
+        MOV     ax, 0             ; ??? Resets AX. ???
+        out     P_ARC   Scanner   ; Set SCAN width
+        in      P_SCAN  ax        ; Commence scan
+        CMP     ax      5000      ; Enemy found?
+        JLS     !fire             ; Yes, Fire/Improve Targeting
+        OPO     12,     Scanner   ; Nah, turn turret right 'Scanner' degrees
+JMP !Main
+!Wall                             ; Sloppy routine. could need a bit NEG.
+        OPO     p_steering,360    ; Rotate.
+        MOV     dx,     4         ; Tell !Main not to check for walls (loop)
+        JMP     !Start            ; Jump back to Main loop
+!Fire
+        cmp     Scanner,4         ; Is the scanwidth small enough?
+        jls     !Shoot            ; Yes, unleash the spray of shots.
+        SHR     Scanner,2         ; Nah, scale it down 1/4
+        IPO     8,      ax        ; get accuracy
+        add     ax,     ax        ; double accuracy
+        mpy     ax,     Scanner   ; Rotate scan width
+        OPO     15      ax        ; Shoot wildly inaccurate shot.
+        OPO     12,     ax        ; Rotate turret
+        OPO     17,     Scanner   ; Zoom scanner
+        JMP !Main
+!Shoot
+        IPO     8,      ax        ; Get accuracy
+        OPO     12,     ax        ; Adjust turret
+        ERR     0                 ; Generate 50% of Beam-Weapon Sound
+        SHL     ax                ; Increase shot angle (spreadfire)
+        OPO     15,     ax        ; Shoot spreadshot 1
+        OPO     15,               ; Shoot 'normal' shot 1
+        ERR     0                 ; Generate 50% of Beam-Weapon Sound
+        SHR     ax                ; Decrease shot angle (spreadfire)
+        OPO     15,     ax        ; Shoot spreadshot 2
+        SHR     ax                ; Decrease shot angle (spreadfire)
+        OPO     15,               ; Shoot 'normal' shot 2
+        OPO     15,     ax        ; Shoot spreadshot 2
+        MOV OrigScan, Scanner     ; Reset scanner.
+        JMP     !Main             ; Jump back to Main
+!Explosives                       ; KamiRoutine.
+       MOV      ax,     1         ; Overheat is..
+       INT      4                 ; ON.. more damage.
+       ERR      123               ; Show we're exploding.
+       INT                        ; !!! <<<Boom>>> !!!

@@ -1,0 +1,114 @@
+#config scanner=0
+#config weapon=1
+#config engine=5
+; Surfer 3
+; First find the closest wall. Go there. When we're close to the edge,
+; orient to hug the wall. Then go in circles (or improve later).
+; Be vewy vewy quick
+
+#def maxlimit
+#def minlimit
+#def colhit
+
+mov maxlimit, 880
+mov minlimit, 120
+
+ipo p_overburn, 1
+opo p_throttle, 100
+
+; Get our position
+int 2
+cmp ex, 500
+jle !left
+jmp !right
+
+!left
+; Left edge is closer. Find out if we're closer to the top. If so, go there,
+; else go left
+cmp ex, fx
+jle !top
+; Okay, move to (0, whatever).
+mov ex, 0
+jmp !go
+
+!right
+cmp ex, fx
+jle !top
+mov ex, 1000
+jmp !go
+
+!top
+mov fx, 0
+jmp !go
+
+!go
+int 7
+ipo 3, bx
+sub ax, bx
+opo p_steering, ax
+opo p_throttle, 100
+
+!none
+
+; Check if we're dangerously close. If so, veer to the right.
+
+int 2
+cmp ex, minlimit
+jle !turn
+cmp fx, minlimit
+jle !turn
+cmp fx, maxlimit
+jgr !turn
+cmp ex, maxlimit
+jgr !turn
+jmp !none
+
+!turn
+err 900
+opo p_steering, 64
+!noneii
+
+; Now check if we're in any corner. If so, veer.
+
+cmp @8, colhit
+jne !collide
+
+dec bx
+cmp bx, 0
+jgr !noneii
+mov bx, 5
+
+int 2
+cmp ex, minlimit
+jle !mainleft
+cmp ex, maxlimit
+jgr !mainright
+jmp !noneii
+
+!mainleft
+cmp fx, minlimit
+jle !upperleft
+cmp fx, maxlimit
+jgr !lowerleft
+jmp !noneii
+
+!mainright
+cmp fx, minlimit
+jle !upperright
+cmp fx, maxlimit
+jgr !lowerright
+jmp !noneii
+
+!upperleft
+!lowerleft
+!upperright
+!lowerright
+opo p_steering, 64
+err 500
+mov bx, 40
+jmp !noneii
+
+!collide
+mov colhit, @8
+opo p_throttle, 100
+jmp !noneii

@@ -1,0 +1,43 @@
+; Fiver
+; Proof of concept for factor-of-5 search (without binary elimination)
+
+#def width
+#def maxwidth
+#def minwidth
+
+mov maxwidth, 125
+mov minwidth, 5
+mov width, maxwidth
+
+!loop
+	opo p_arc, width ; Set arc
+	ipo p_scan, ax	; Get range to closest
+	cmp ax, 1600	; Found anything?
+	jgr !scan_elsewhere ;No, flip or enlarge
+	cmp width, minwidth
+	je !lock
+	; Now @3 is accuracy
+	mov bx, width
+	div bx, 5	; takes a long time!
+	mov width, bx
+	cmp @3, 0
+	je !loop
+	mpy bx, @3	; takes a long time!
+	opo 12, bx ; rotate!
+jmp !loop
+
+!lock
+	opo 15, @3
+	delay 20
+jmp !loop
+
+!scan_elsewhere
+	cmp width, maxwidth ; Already at maximum?
+	je !flip
+	mpy width, 5
+jmp !loop
+
+!flip
+	opo 15
+	opo 12, maxwidth
+jmp !loop

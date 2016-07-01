@@ -1,0 +1,49 @@
+#config armor=3
+#config weapon=0
+#config heatsinks=3
+#config mines=0
+#config shield=5
+#config scanner=0
+#config engine=1
+;put ax 100
+add ax, 100
+opo 24, 1
+!start
+opo 11, ax
+opo 14, 1
+;in 1, bx
+;cmp bx 0
+;jbe !turn
+do 5
+out 14, 100
+out 11, 100
+loop 1
+do 6,
+out 14, 50
+out 11, -75
+loop 1
+ipo 2, bx
+cmp bx, 100
+ja !cool
+cmp bx 50
+jb !restart
+;ipo 7, ax
+;int 3, 2
+;;cmp ax 1500
+;jls !track
+jmp !start
+;!turn
+;neg bx
+!cool
+opo 24, 0
+do 5
+nop 10
+loop 5
+jmp !start
+!restart
+;;;opo 23, 1
+opo 24, 1
+;opo 22, 1
+jmp !start
+;!track
+;ipo 8

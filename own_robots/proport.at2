@@ -1,0 +1,28 @@
+; Mockup of proportional steering response to north.
+
+opo p_throttle, 100
+
+!loop
+	int i_locate ; ex is x coord, fx is y coord
+
+	cmp fx, 500
+	jls !experimental
+	jmp !loop
+
+!experimental
+	mov ax, fx
+	shr ax, 2 ; 0..127
+	ipo p_random, bx
+	and bx, 255
+	mod bx, ax		; YUCK! Do better later
+	add bx, 127 ;127..255
+	add bx, 64 ; properly centered
+	err bx
+	jmp !steer
+
+!steer
+	mov cx, @1      ; Desired heading
+        sub bx, cx      ; Get number of degrees to turn.
+
+	opo p_steering, bx ; All done
+jmp !loop

@@ -1,0 +1,149 @@
+opo p_throttle, 100
+
+;#config engine=4
+;#config heatsinks=0
+;#config armor=0
+
+; Hint: A moving target is more difficult to hit than a stationary LUMP!
+
+; TOURNAMENT RESULTS: 40% normalized score in Standard.
+
+;opo 18, 1 ; drive it like you stole it!
+mov ax, 1
+int i_keepshift
+
+mov dx, 64
+
+!loop
+	opo 17, dx ; set arc to dx
+	ipo 7, fx  ; scan
+	cmp fx, 1600 ; anything found?
+	ja !update ; no.
+!found
+	cmp dx, 4 ; narrow enough?
+	jgr !narrow ; no, narrow it down
+
+;	opo 18, 0
+;	opo 12, @3
+
+	mov bx, dx
+	sar bx, 1
+	mpy bx, @3
+	opo 12, bx ; keep em centered!
+
+	ipo 2, bx
+	cmp bx, 280 ; too hot?
+	jgr !continue ;yes, forget it
+
+	opo 15, @3 ; yep, fire!
+	opo 15, @3 ; yep, fire!
+	opo 15, @3
+;	opo 18, 1
+!continue
+
+	int 2	; get current location. ex = x, fx = y
+
+	; arena is 1000 x 1000.
+
+	; are we not already heading the right way?
+        ipo     3,      bx      ; bx = heading
+        cmp     bx,     @1      ; is heading equal to desired heading?
+	jne !loop
+
+	cmp ex, 800 ; close to right wall?
+	jgr !veer
+	cmp ex, 200
+	jls !veer
+	cmp fx, 800
+	jgr !veer
+	cmp fx, 200
+	jls !veer
+
+	; else, head some slight direction
+	ipo 10, ax
+	and ax, 8
+	shl ax, 2
+	opo 14, ax
+	opo p_throttle, 100
+
+jmp !loop
+
+!veer
+	; this takes lots & lots of time
+
+	ipo 10, ax ; get random number
+	mov ex, ax
+	and ex, 256
+	add ex, 256
+	shr ax, 8
+	mov fx, ax
+	add fx, 256
+
+;	mov ex, 500
+;	mov fx, 500
+
+	; ex, fx random between 256 and 768.
+	int 7
+
+	; veer!
+	mov bx, @1
+	sub ax, bx
+	opo 14, ax
+	opo p_throttle, 100
+	
+jmp !loop
+
+!narrow
+mov bx, dx
+cmp @3, -2
+je !caseminustwo
+cmp @3, -1
+je !caseminusone
+cmp @3, 0
+je !casezero
+cmp @3, 1
+je !caseone
+
+!resume
+;sar bx, 1 ; incorporated
+opo 12, bx
+
+sar dx, 2 ; quarter angle
+	  ; (optimal is fifth angle (-2, -1, 0, 1, 2: 5 members), but that doesn't lend
+	  ; to easy multiplication
+;jls !left
+je !continue
+jne !continue
+
+!caseminustwo
+neg bx
+jne !resume
+je !resume
+
+!caseminusone
+neg bx
+sar bx, 1
+jne !resume
+je !resume
+
+!casezero
+mov bx, 0
+jne !resume
+je !resume
+
+!caseone
+sar bx, 1
+jne !resume
+je !resume
+
+!update
+cmp dx, 64 ; if greatest parameter
+jeq !flip  ; flip
+shl dx, 2  ; else increase width
+jne !continue
+je !continue
+
+!flip
+opo 12, 128 ; flip
+jne !continue
+je !continue

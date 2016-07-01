@@ -1,0 +1,476 @@
+; Redoing of Hrairoo
+; Takes into account 7/8, 5/8, etc
+
+; TODO: Reorient scanner after firing so that marginal targets stay locked on.
+; No problem with sduck, but might later.
+
+; TODO: Fix scanner reorientation bug (may be linked to the firing in some way).
+; TODO: Test that the system works with different minarcs (actually firing
+; resolutions; we ideally want the scanner arc to be as large as possible).
+; The scanarc propagation system is pretty ingenious here, since something off
+; to -2 or 2 will get shot at even at a much larger scanarc (because the
+; propagation factors in the relative size).
+
+; TODO: Clean up no_clamp etc. And document!
+
+; Note: jumping from fire to realrot gets us up from .83 to .85. I'm pretty
+; sure this is "dithering" working, but we should examine more closely. Also,
+; I think that the remaining .15 is due to a combination of not having included
+; the dynamic narrowing system (so the shots always miss in extreme cases), and
+; the aforementioned modular arithmetic problem (where we waste shots while the
+; others are in transit).
+; The record is .74, but that's against moving targets. (That bot gets .81
+; against the static target.)
+
+; If we're to use the "if one hits, how many others can hit" logic later, we
+; must be sure that one will hit with maximum chance, i.e. that dithering isn't
+; required.
+
+; Mainly-irrelevant except for scoring: find out what delay makes us least
+; likely to have fired more shots than were required to finish the target.
+; Some kind of modular arithmetic trickery.
+; Also, longer delays will prolong the time a persistently misaiming robot
+; lives before killing itself off due to heat overload.
+
+; By reasoning, the firing routine should first fire and then rotate. In the
+; case of a moving target, this lets us add anticipatory scanning later without
+; mucking up the actual firing.
+
+; Misfire problem is due to the dynamics - basically minarc being too high.
+; What happens is that the first shot has minarc at a high value, and the
+; adjusted shot misses. Then the turret rotates, scans again, and narrows down
+; to a smaller minarc. Probably only happens in the case where narrowing down
+; in the first place gets us just above minarc, then the second definitely gets
+; us below it.
+; The solution is a dynamic scanarc provision. Since we're only dealing with
+; shots and not with the real scanner arcs (because of the delayed effect that
+; scanarc must propagate up to oldscanarc), we can have as tight a beam as we
+; want, because we only lose misses anyhow.
+
+; TODO: Rename scanarc and oldscanarc to confidence and scanarc to make the
+; logic more obvious.
+
+; TODO: Figure out how to do the rotation when firing stuff. The general idea
+; is:
+;	We enter the firing function with a rotation parameter giving the center
+;	of the area where the enemy resides and the size of that area.
+;	We want to shoot by rotating the gun only if we can, which saves us a
+;	trotate call that we can delay until later. We'll also be subject to
+;	correction for moving targets later.
+;
+;	In the case that we can rotate with the gun only, the solution is clear;
+;	fire with adjustment and jump back to rotate the turret afterwards (to
+;	keep on target).
+;	If we must rotate the turret manually, any rotation will cost the same,
+;	so rotate all the way and then rotate back afterwards.
+;	But now it gets complicated. We may want to rotate by the correction
+;	and the rotation offset, and then only partly rotate back later so that
+;	the scanner follows the target. This suggests the following setup:
+;	By any means, we have to rotate by the offset plus whatever target-
+;	following correction may exist, after we've done the function.
+;	Thus, we should first check if the rotation plus the full correction
+;	fits within the range of the gun. If so, fire ahead and then jump to
+;	the rotation once we're done.
+;	If not, we have to rotate by offset and partial correction, so our
+;	decision is whether we can cut out rotating twice by rotating by the
+;	offset and partial correction and then firing with the gun. If that
+;	still falls beyond the range, we're doomed to two rotations; first
+;	offset and full correction, then fire, then back to half correction.
+;	
+;	By this, we need the offset (already provided), the partial correction,
+;	and the full correction. First we check if offset + full correction is
+;	within the gun's targeting angle. If so, OK. If not, we subtract the
+;	partial correction from the full correction. If that's within the range
+;	of the gun, we go to the second subsection: rotate by partial correction
+;	then fire with the residual, then continue. Otherwise, we have to rotate
+;	by the offset plus full correction, then rotate back by that subtracted
+;	value.
+;	That'll be a bit complex and slow, but it lets us plug in any full and
+;	partial correction values.
+
+;TODO more immediately: check that the system works with minarc at 1. Possibly
+;implement binary division for the case of current scanarc < 4, because rounding
+;errors will screw stuff up otherwise.
+;TODO: Fix problem where we reduce 4 to 0 where we could reduce to 2 (or 1) 
+;and then discriminate to 1 degree in any case. More broadly, add strategy so 
+;that it always reduces to minarc exactly, so we can keep lock for longer.
+;We can do that by setting scanarc to minarc * 2 (worst case scenario) if it is
+;<= minarc. In the case of 0, absent fixed point reductions, we need a number
+;that is <= 0.5 when halved, i.e. 1. (By reasoning, 0 is probably +/-0.5 
+;degrees, because of the granularity of the arena)
+;TODO: Also fix rounding problem that appears when we narrow down to something
+;with 1 degree or less. Specifically, positives should round up (maybe not +1?)
+;and negatives round down (maybe not -1?) As it is, this really wrecks our hit
+;stats against sduck with minarc 0.
+
+;No, a fixed point representation is a fiction. The only thing it's good for is
+;for dynamic range confidence representation (and absolute maximum scanner arc
+;size), but since practically all of that will be wrt a degree of 1, there'll
+;be little gain and a lot of error-checking.
+;For confidence representation, we can just have 1 for that which requires +/-1
+;degree, 0 for that which requires +/-0 (in effect +/-0.5) and -1 for whatever
+;requires more accuracy than we can ever get. (But +/- 0 is truly +/- 0; it
+;never fails)
+;But for maximizing the scanner arc (and thus keeping lock), we get into hairy
+;territory. Say the confidence rep. says that at this range, we need to hit
+;within 3 degrees. Double that, which is worst case, is 6 degrees. Now assume
+;we find the enemy has moved to +2. Dividing 6 by 4 (quintant size reduction)
+;gives 1.5, which can't be represented. If we round down, we'll miss something,
+;so we must round up, which kinda evaporates the benefit wrt just losing lock.
+;(Note that fixed point doesn't solve this problem, as fixed point is a 
+; fiction. Even when narrowing down, FP is pointless because our accuracy values
+; are only relative to the actual scanner arc, which must be integral.)
+
+; High point: 0.91 (weapon=5), low point: 0.26 (weapon=0)
+
+;#config engine=0
+;#config weapon=0
+;#config armor=0
+
+#def scanarc
+#def minarc
+#def maxarc
+#def oldscanarc
+#def rotation
+#def firingres
+#def debug
+#def adebug
+
+mov oldscanarc, 0
+mov scanarc, 64
+mov maxarc, 64
+mov minarc, 0
+
+!loop
+	; Movement, etc, stuff go here
+
+	; Clamp scanning arcs
+	jmp !clamparcs
+!afterclamp
+	cmp scanarc, 0
+	jls !errorii
+	; Decision algorithm
+	cmp oldscanarc, scanarc
+	jne !updateScanning
+
+	; Probably call narrow and so here
+	ipo p_scan, ax
+	cmp ax, 1500
+	jgr !extend
+	jle !narrow
+
+!rotate
+	;err scanarc
+	cmp scanarc, minarc
+	jle !fire
+!afterfire
+	cmp rotation, 0
+	je !afterscan
+!realrot
+	opo p_trotate, rotation
+!afterscan
+	; TODO, stuff with bx rotation etc.
+ 	; And then jump here for firing decisions.
+ 	; But remember, scanarc can be used as a resolution! (Even when we
+ 	; haven't scanned yet)
+	;cmp scanarc, minarc
+	;jle !fire
+
+	jmp !loop
+
+!clampArcs
+	cmp scanarc, minarc
+	jgr !not_at_minimum
+	cmp minarc, 0		; Branch if minimum is < 1.
+	je !handle_zeroes
+
+	mov scanarc, minarc
+	shl scanarc, 1		; Will produce a lock next turn
+	jmp !checks_done
+!handle_zeroes
+	; This kinda works if scanarc = 2, but we still need to proof it
+	; for scanarc = 1 for non-even cases.
+	mov scanarc, 2		; Treat 0 as 0.5, which doubled makes 1
+				; Not really true, but best we can do
+	jmp !checks_done
+!not_at_minimum
+	cmp scanarc, 64		; See if it's larger than required
+	jle !checks_done	; No? Don't bother
+	mov scanarc, 64		; Else clamp maximum
+!checks_done
+	je !afterclamp
+	jne !afterclamp
+
+!updateScanning
+	mov oldscanarc, scanarc
+	opo p_arc, scanarc
+	jmp !loop
+
+!extend
+	; Possible error here wrt flipping and quick coverage.
+	; Flipping idea is like this: if we have an infinite scanner,
+	; and we don't find anything in this quadrant, then it must be in
+	; the direction accuracy says, within half arc. If we don't have any
+	; accuracy measurement, apply this recursively. But that's a worst case
+	; log n if it goes out of our radar, so we should account for that; if
+	; the last was 0, rotate all the way instead of flipping. In any case,
+	; we should never cover an area we've already covered, flipping or not.
+	; TODO: Fix that. Once we've got the scanner reduction to work past 4.
+	; We could roll this up with t_rotation so we center it on where it was
+	; lost. That'll cause overlaps, but it'll make it harder to run, and
+	; we can still use "if last accuracy was zero, it wandered off range or
+	; we never scanned anything" as heuristics.
+
+	; Bug-testing: since we're up against a stationary target, we should
+	; never lose lock.
+	cmp scanarc, 64
+	jls !errorv
+
+	; Is this required?
+	cmp scanarc, 0
+	ja !noBootstrap
+	mov scanarc, 1
+!noBootstrap
+	;err scanarc
+	; Always flip right.
+	; Add accuracy later.
+	; Maybe better heuristics too, with stuff having escaped our arc
+	; and so on.
+	;opo p_trotate, scanarc
+	mov rotation, scanarc
+	cmp scanarc, 64
+	jae !noextend
+	shl scanarc, 2
+	;opo p_arc, scanarc
+!noextend
+	jmp !rotate
+
+!narrow
+	cmp scanarc, 1
+	je !narrow_to_zero
+	cmp @3, 1
+	jgr !narrowtwos
+	je !narrowones
+	cmp @3, -1
+	jls !narrowtwos
+	je !narrowones
+
+!middle
+	mov rotation, 0		; Straight ahead
+	shr scanarc, 2		; Size 1/4 centered at 0
+	; Really to norot
+	jmp !rotate
+
+!narrowones
+	; Size 1/4 centered at 4/8
+	; Should round up.
+	mov rotation, scanarc
+	add scanarc, 2
+	;inc rotation		; Round up!
+	shr rotation, 1		; Now 1/2 to the right, WWWWW
+	shr scanarc, 2		; Scanarc less 1/4
+	jmp !proceed
+
+!kludgy
+        mov rotation, 0
+	mov scanarc, 0
+	cmp @3, 0
+	je !proceed
+	mov rotation, 1
+jmp !proceed
+
+
+!narrowtwos
+	; Size 1/8 centered at 7/8
+	; Need parametric solution later for when we're going to use bx
+	; as firing hint.
+	; Not anymore, because scanarc serves as a hint too!
+	
+	mov rotation, scanarc
+	add scanarc, 4		; Round up!
+	shr scanarc, 3		; 1/8
+	mov adebug, scanarc
+	sub rotation, scanarc	; 7/8
+	jmp !proceed
+
+!narrow_to_zero
+	; Handle corner case of 1. Since 0 is considered +/- 0.5, the strategy
+	; is simple: If accuracy is zero, don't rotate, otherwise rotate by one
+	; degree in the direction in question.
+	mov scanarc, 0
+	mov rotation, 1
+	cmp @3, 0
+	jne !proceed
+	mov rotation, 0
+
+!proceed
+	cmp @3, 0		; Is the enemy to the left?
+	jae !nonegate		; No, skip this
+	neg rotation		; Otherwise flip to the left instead
+!nonegate
+	; Could just do a cmp bx, 0 here, but that requires clearing bx
+	; up above on center.
+	; Conditions:
+	;	If we've got a sufficiently narrow angle, we can now fire.
+	;	In that case, only rotate if bx is within parameters.
+	;	If we don't, narrow down (we must rotate)
+	;opo 15
+	;opo p_trotate, bx
+	;opo 15
+	;err rotation
+	;delay 20
+	;err @3
+	jmp !rotate
+
+!fireq
+	; Simple firing routine to see if I'm right about the rounding.
+	; If I am, I have to solve it; just "caching" the solution won't
+	; work in the case the enemy moves to a different minscan range.
+	opo p_trotate, rotation
+	opo 15
+	neg rotation
+	opo p_trotate, rotation
+	neg rotation
+jmp !loop
+
+!fire
+	jmp !ffa
+	cmp @3, 2
+	je !okayf
+	cmp @3, -2
+	jne !ffa
+!okayf
+	cmp oldscanarc, 2
+	jne !ffa
+	cmp rotation, 1
+	jne !ffaq
+	inc rotation
+	jmp !ffa
+!ffaq
+	cmp rotation, -1
+	jne !ffa
+	dec rotation
+!ffa
+	delay 150		; Ensures we don't fire shots after it's dead.
+				; Debugging measure to check that we're
+				; always on target.
+	cmp scanarc, 0
+	jls !errorii
+	; Takes one cycle
+	mov firingres, rotation
+	; Check if we have the bug - DEBUG CODE
+	; Through fortune, I have observed the error that drags our accuracy
+	; down. It details narrowing to 0 where the turret fails to rotate to
+	; cover the sides. (No.)
+	mov debug, @3
+	opo p_trotate, firingres
+	opo p_arc, 0
+	ipo p_scan, ax
+	opo p_arc, oldscanarc
+	cmp ax, 1500
+	jgr !erroriv
+	neg firingres
+	opo p_trotate, firingres
+	neg firingres
+
+	; Add other parameters here
+	;delay 99
+	;err scanarc
+	cmp firingres, 4
+	jgr !manual
+	cmp firingres, -4
+	jls !manual
+	opo 15, firingres
+	; Maybe either go to rotation or just keep track the usual way,
+	; depending on how fast it's moving.
+	jmp !loop
+
+!manual
+;	err firingres
+;	delay 50
+;	err rotation
+;!None
+;	jmp !None
+	sub rotation, firingres
+	opo p_trotate, firingres
+	opo 15
+	jmp !loop
+
+!erroriv
+	mov dx, 5
+	jmp !errorqwz
+!errorv
+	mov dx, 6
+	jmp !errorqwz
+!errorqwz
+	; 2 0 -1 -2
+	; 2 0 1 2
+
+	; Also:
+	;	5 | 2 0 1 2
+	;	5 | 2 0 1 2 (too far to the left)
+	;	5 | 2 0 -1 -2 (too far to the right)
+	;	5 | 2 0 -1 -2 (too far to the right)
+	;	5 | 2 0 -1 -2 (hard to see - goes too far to the right?)
+	;	6 | 1 1 -2 0 (too far to the right)
+	;	6 | 1 1 2 ??
+	;	6 | 1 1 2 2 (after kludge; too far to the left)
+	;	6 | 1 1 2 0 (after kludge; too far to the left)
+	;	6 | 1 1 -2 (after kludge - fires once)
+	;	6 | 1 1 - 2 0 (after kludge)
+	;	5 | 2 0 -1 -2 (too far to the right)
+	;
+	;	6 | 1 1 -2 -2 (fires once, then far off to the right)
+	;	6 | 1 1 -2 -2 (same pattern)
+	;	6 | 1 1 -2 -2 (again)
+	;	6 | 1 1  2 2  (far off to the left)
+	;	6 | 1 1 2 2 0
+
+	;	5 | 1 1 0 0 (with scanarc = 3; slightly to the right)
+
+        mov cx, 257
+        mov bx, 0
+        opo p_arc, 0
+:90
+        ipo p_scan, ax
+        cmp ax, 1500
+        jgr !nodice
+        inc bx
+!nodice
+        opo p_trotate, 1
+        loop 90
+
+        add bx, 300
+        cmp bx, 300
+        jne !boom
+
+	opo p_arc, 0
+	do
+	ipo p_scan, ax
+	loop 30
+	err dx
+	delay 50
+	err oldscanarc
+	delay 50
+	err scanarc
+	delay 50
+	err rotation
+	delay 50
+	err debug
+	delay 50
+	err adebug
+	delay 1000
+	jmp !errorqwz
+
+!errorii
+	;opo 15
+	err oldscanarc
+	delay 10
+jmp !errorii
+
+!erroriii
+	err 1000
+	jmp !erroriii
+
+!boom
+	int

@@ -1,0 +1,35 @@
+; Prediction test.
+; Just pick a direction that's far away from where we are, then steer there
+; at constant speed.
+
+
+#config weapon=0
+#config scanner=0
+#config armor=5
+#config engine=5
+
+mov ax, 1
+int i_overburn
+
+opo p_throttle, 1
+int 2 ; Get position
+
+; Revert
+mov ax, 1000
+mov bx, 1000
+sub ax, ex
+sub bx, fx
+
+mov ex, ax
+mov fx, bx
+; Get heading
+int 7
+
+; Go there
+mov bx, @1
+sub ax, bx
+opo p_steering, ax
+opo p_throttle, 78
+
+!loop
+jmp !loop

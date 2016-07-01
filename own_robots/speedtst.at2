@@ -1,0 +1,79 @@
+; Speed test for our ATR2 implementation
+; Move to the corner of the screen and then along the edge.
+
+opo 15, -4
+opo 15, -3
+opo 15, -2
+opo 15, -1
+opo 15, 0
+
+mov ex, 80
+mov fx, 80
+int 7	; Find angle. Angle is in ax
+ipo 3, bx ; Current heading
+sub ax, bx
+opo 14, ax ; Turn in that direction
+opo p_throttle, 100 ; Go to upper left corner.
+!loop
+; Get current position. If both coords are <= 100, we're there, otherwise
+; loop.
+int 2
+cmp ex, 90
+jgr !loop
+cmp fx, 90
+jgr !loop
+opo p_throttle, 0
+delay 10
+; Okay, now turn to face east
+ipo 3, bx
+mov ax, 63
+sub ax, bx
+opo 14, ax
+opo p_throttle, 100
+!intermed
+ipo 3, bx
+cmp bx, 63
+jne !intermed	; wait until it has turned
+!noneint
+; Get clock reading
+int 19
+int 6
+mov ax, fx	; "Ones" of timer
+
+; Now wait until we've crashed
+; Ugly version because reimplementation's collision detection SUCKS
+!nchk
+ipo p_spedometer, bx
+cmp bx, 0
+int 6
+jne !nchk
+jmp !none
+!next
+; Crash, so get clock reading and difference
+int 6
+opo p_throttle, 0
+sub fx, ax
+!time
+error fx
+jmp !time
+
+
+
+
+
+
+
+
+!none
+inc dx
+inc cx
+cmp cx, 280
+jae !boom
+cmp dx, 50
+jls !none
+mov dx, 0
+error cx
+jmp !none
+
+!boom
+int 0

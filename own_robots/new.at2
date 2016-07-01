@@ -1,0 +1,57 @@
+#msg You can't hide!
+#config engine=0
+#config heatsinks=3
+#def heat
+
+mov dx 64 ; sets scan-arc to 64
+
+!main
+mov heat 0 ; sets ex to 0
+ipo 2 heat ; gets heat
+cmp heat 250 ; compares it to 250
+jge !heat ; if >= goto !heat
+
+!scan
+opo 17 dx ; set scan-arc 
+ipo 7 fx ; scan
+cmp fx 1501 ; anyone there?
+jgr !decide ; if not goto decide
+cmp dx 2 ; is dx <= 2?
+jle !fire ; if so, fire!
+shr dx 1 ; halve scan-arc
+mov bx dx ; move scan-arc to bx
+cmp @3 0 ; is target in center of scan?
+jgr !right ; right? go right.
+jls !left ; left? go left.
+je !scan ; dead on? keep centered.
+
+!right 
+opo 12 bx ; turn right by 1/4 of original scan-arc
+jmp !scan ; scan again
+
+!left
+neg bx ; bx = -bx
+opo 12 bx ; turn left by 1/4 of original scan-arc
+jmp !scan ; scan again
+
+!fire
+opo 15 @3 ; fire
+opo 15 @3 ; fire
+jmp !main ; check heat
+
+!heat
+do 50
+!heat1
+nop ; hold for 50 rounds
+loop !heat1
+jmp !scan ; where is enemy?
+
+!decide
+cmp dx 64 ; is scan-arc 64?
+jge !flip ; yes? goto flip
+shl dx 1 ; no? loosen scan-arc
+jmp !scan
+
+!flip 
+opo 12 128 ; flip turret
+jmp !scan

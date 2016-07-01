@@ -1,0 +1,41 @@
+; Great Circles: seek 500,0 (top of level), then travel in circles.
+; May be a PITA with different engine speeds and such. Later.
+
+; Trig
+mov ex, 500
+mov fx, 100
+int 7
+ipo 3, bx
+sub ax, bx
+opo p_steering, ax
+opo p_throttle, 100
+
+; Wait until we get there
+!loop
+int 2 ; get position
+sub ex, 500
+cmp ex, 0
+jgr !contloop
+neg ex
+!contloop
+cmp ex, 50
+jgr !loop
+cmp fx, 110
+jle !there
+jmp !loop
+
+!there
+; Right ourselves
+ipo 3, bx
+mov ax, -64
+sub ax, bx
+opo p_steering, ax
+
+!not
+cmp bx, 20
+jle !aftersteer
+opo p_steering, -5
+mov bx, 0
+!aftersteer
+inc bx
+jmp !not

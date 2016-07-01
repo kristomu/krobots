@@ -1,0 +1,20 @@
+; Unorthodox twirling robot. Random twirling arcs at size 2 with @3 firing
+; Oh my!
+
+; Gee, I knew the optima numbers would come in handy!
+
+#def range
+
+opo p_arc, 2
+mov range, 206
+
+!loop
+	ipo p_scan, ax
+	cmp ax, 1500
+	jle !fire
+	opo p_trotate, range
+jmp !loop
+
+!fire
+	opo 15, @3
+jmp !loop

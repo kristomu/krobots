@@ -1,0 +1,23 @@
+; Home-on-target
+; Look ma, no scanner!
+; Proof of concept
+
+#def rad_old
+#def rad_new
+#def delta
+
+!main
+opo p_throttle, 100
+
+	mov rad_old, rad_new
+	ipo p_radar, rad_new
+	mov delta, rad_new
+	sub delta, rad_old
+	cmp delta, 0
+	jle !nai
+	; Turn!
+	opo 14, 5
+	jmp !main
+!nai
+	opo 14, -5
+	jmp !main

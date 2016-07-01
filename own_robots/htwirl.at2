@@ -1,0 +1,13 @@
+; This should never lose against SDUCK. If it does, there's a bug somewhere.
+
+opo p_arc, 0
+
+!loop
+opo p_trotate, 1
+!ltwo
+ipo p_scan, ax
+cmp ax, 1500
+jgr !loop
+!fire
+opo 15
+jmp !ltwo

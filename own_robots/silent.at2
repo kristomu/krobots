@@ -1,0 +1,202 @@
+#config mines=0
+#config weapon=4
+#config armor=2
+#config engine=0
+#config heatsinks=1
+#config scanner=5
+#config shield=0
+
+; This thing lays the smackdown on coroner, but doesn't work all
+; that well against other enemies.
+
+; TODO: Figure out at what angles the quantization is too great
+; and don't fire if the enemy's there.
+
+; TOURNAMENT RESULTS: 70% normalized score in Standard.
+
+#def tnote
+mov tnote, !table
+shl tnote, 2
+add tnote, 1024
+
+;opo 8, 1
+mov dx, 64
+
+;opo p_throttle, 100
+mov ax, 1
+int 3
+
+!loop
+	opo p_steering, 20
+	opo 17, dx
+	ipo 7, fx
+	cmp fx, 5000
+	ja !lost
+
+!track
+
+cmp @3, 0
+je !noturn		; Fall 0
+mov bx, dx		; != 0
+jgr !plus		; greater than 0?
+neg bx			; no, rotate leftwards by negating
+cmp @3, -1		; -1?
+jgr !resume		; no, -2, we're done
+!plus			; -1 fall through to here
+cmp @3, 2		; less than 2? (i.e -1 and 1)
+je !resume		; no, 2, we're done
+sar bx, 1 		; -1 or 1, only move half as far
+
+
+;	mov bx, dx
+;	sar bx, 1
+;	mpy bx, @3
+!resume
+	opo 12, bx
+!noturn
+	cmp dx, 5
+	jle !fire
+	sar dx, 2
+	jmp !loop
+
+!lost
+	cmp dx, 64 ; 64?
+	je !flip ;yes, flip
+	shl dx, 2 ; else widen
+	jmp !loop
+
+!flip
+	opo 12, 128
+	jmp !loop
+
+!fire
+	; get distance to target
+	; get target heading
+	; engine speed max (unmodified engine): 400
+	; compute lead	: angle = (engine speed shr 4) shl 7 + (heading and 127)
+	;		  if heading > 127, negate result
+	; turn turret
+;	mov bx, @13 ; speed
+;	sar bx, 4
+;	sal bx, 7
+;	err bx
+
+;	mov cx, @6  ; heading
+;	cmp bx, 0
+;	jls !backwards
+!continue
+;	and cx, 127
+;	add bx, cx
+	
+	ipo 2, ex
+	cmp ex, 200
+	jgr !loop
+
+	mov fx, tnote
+	add fx, @6
+;	mov cx, [fx]
+
+	cmp @13, 0
+	je !noadjust
+;	jgr !firenow
+;	neg cx ; going backwards
+;	jgr !neg
+;	cmp cx, 0
+;	jls !neg
+
+!firenow
+	cmp [fx], 5
+	jae !manual
+	cmp [fx], -5
+	jle !manual
+	; fire
+	;opo 12, cx
+
+	opo 15, [fx]
+	opo 15, [fx]
+	; turn turret back
+	;opo 12, -cx
+jmp !loop
+
+!manual
+	mov cx, [fx]
+	opo 12, cx
+	opo 15
+	opo 15
+	neg cx
+	opo 12, cx
+jmp !loop
+
+!noadjust
+	err 200
+	int 0
+	opo 15
+jmp !loop
+
+; Brighter than the sun
+!table
+*	0	0	0	1	
+*	1	1	1	1	
+*	1	2	2	2	
+*	2	2	3	3	
+*	3	3	3	3	
+*	4	4	4	4	
+*	4	4	4	5	
+*	5	5	5	5	
+*	5	5	6	6	
+*	6	6	6	6	
+*	6	6	6	7	
+*	7	7	7	7	
+*	7	7	7	7	
+*	7	7	7	7	
+*	7	7	7	7	
+*	8	8	8	8	
+*	8	8	8	8	
+*	8	7	7	7	
+*	7	7	7	7	
+*	7	7	7	7	
+*	7	7	7	7	
+*	7	7	6	6	
+*	6	6	6	6	
+*	6	6	6	5	
+*	5	5	5	5	
+*	5	5	4	4	
+*	4	4	4	4	
+*	4	3	3	3	
+*	3	3	3	2	
+*	2	2	2	2	
+*	1	1	1	1	
+*	1	1	0	0	
+*	0	-0	-0	-1	
+*	-1	-1	-1	-1	
+*	-1	-2	-2	-2	
+*	-2	-2	-3	-3	
+*	-3	-3	-3	-3	
+*	-4	-4	-4	-4	
+*	-4	-4	-4	-5	
+*	-5	-5	-5	-5	
+*	-5	-5	-6	-6	
+*	-6	-6	-6	-6	
+*	-6	-6	-6	-7	
+*	-7	-7	-7	-7	
+*	-7	-7	-7	-7	
+*	-7	-7	-7	-7	
+*	-7	-7	-7	-7	
+*	-8	-8	-8	-8	
+*	-8	-8	-8	-8	
+*	-8	-7	-7	-7	
+*	-7	-7	-7	-7	
+*	-7	-7	-7	-7	
+*	-7	-7	-7	-7	
+*	-7	-7	-6	-6	
+*	-6	-6	-6	-6	
+*	-6	-6	-6	-5	
+*	-5	-5	-5	-5	
+*	-5	-5	-4	-4	
+*	-4	-4	-4	-4	
+*	-4	-3	-3	-3	
+*	-3	-3	-3	-2	
+*	-2	-2	-2	-2	
+*	-1	-1	-1	-1	
+*	-1	-1	-0	-0	
+

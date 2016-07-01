@@ -1,0 +1,450 @@
+; Hrairoo, v 3
+; Uses accuracy-based scan with rounding up, so should never lose a lock against
+; a sitting duck (unless it slips between the angles).
+
+; Base is 780 with 30k rounds against schall with z1.
+
+#def scanarc
+#def precision
+#def minarc
+#def newminarc
+#def maxarc
+#def debug
+
+#def rotation
+
+#def oldaccuracy
+#def cacheacc		; Is this required or does it just waste time?
+			; Consider the "locking on from above" false positive
+			; that would otherwise occur, and if it's too rare.
+
+#def minoffset
+mov minoffset, !dynminarc
+shl minoffset, 2
+add minoffset, 1024
+sub minoffset, 8	; Can't get closer to each other than this
+
+mov oldaccuracy, -5
+mov cacheacc, -5
+mov ax, 1700
+mov rotation, 0
+mov scanarc, 0
+mov maxarc, 64
+mov precision, maxarc
+mov minarc, 0		; To Be Replaced by dynamic allocation
+
+mov debug, 0
+
+jmp !clampFromAbove
+
+!main_prime
+
+	; Did the last round around produce a lock? If so, update oldaccuracy.
+	cmp ax, 1500
+	jgr !main_scan
+	mov oldaccuracy, @3
+
+!main_scan
+
+	; Then scan to see if we've got the enemy or lost it.
+	; If we have the enemy, narrow down based on accuracy (produce new
+	;  precision), otherwise extend/flip; in any case, get the new precision
+	; which states at which resolution we have the enemy.
+
+	ipo p_scan, ax
+	cmp ax, 2000
+	jgr !scanExtend
+	jle !scanMinNarrow
+
+	; TODO: Note the ratchet effect here in that if we have a lock of say
+	; 2 and cache, then if the enemy moves towards us (or minarc gets 
+	; larger), we won't get through here and so the actual scanarc won't
+	; change from 2.
+	; The right solution will be to check, upon looking it up, if minarc
+	; has changed. If so, we should always jump to new_precis.
+
+!main_new_precis
+	; If we get here, we went through either narrow or expand and our
+        ; precision changed as a consequence. Clamp it (TODO do this first?) 
+	; and update our scanning arc to reflect the precision; also change 
+	; last cached accuracy to lock in a future cache.
+
+	; err -50
+        ; err scanarc
+        ; err precision
+        ; err rotation
+	; err @3
+
+	mov cacheacc, @3
+	jmp !clampFromAbove
+
+!main_past_clamp
+
+	cmp precision, scanarc
+	jne !updateScanArc
+
+!main_old_precis
+
+	; Then determine if precision is small enough to fire. If it is, do so.
+	; Otherwise, rotate and go back to start.
+
+	cmp precision, minarc
+	jle !fire
+	
+	; Note that in the case of having a rotation different from 0, we
+	; cannot null it after rotation. Assume that the enemy is at accuracy 
+	; +2. If the cache is to hold, then next time (after rotation) the enemy
+	; is still at +2, which means we have to rotate once more. 
+!qandar
+	cmp rotation, 0		; If there's no angle to rotate, then no point
+				; either.
+	je !veryend		; Change when we add movement code.
+	opo p_trotate, rotation
+	;mov rotation, 0
+
+!veryend
+;	cmp ax, 1500
+;	        jgr !main_prime
+;		        mov oldaccuracy, @3
+
+
+	jmp !main_prime
+
+; ------------------ SUBROUTINES ----------------------
+
+!clampFromAbove
+	; Limit current precision to 1..64. Since this is after the firing,
+	; we can limit from below to 1; the call to the scan proper will narrow
+	; it down to 0 if we have confidence.
+	; What we really want to do here is to set the arc so that the accuracy
+	; region encompasses the precision we have. The intuitive way to do that
+	; is to keep the enemy centered and then expand to 2 * minarc if we're
+	; <= minarc. We do this here, though we should also rotate to keep it
+	; centered somewhere else.
+
+	; We no longer limit from below here, so this function may become
+	; subsumed into Extend.
+
+	; Limit from above
+	cmp precision, maxarc
+	jle !main_past_clamp
+	mov precision, maxarc
+	jmp !main_past_clamp
+
+; --
+
+; Clamp from below, if required, giving the greatest possible scanning arc
+; we can handle while still keeping lock, and then set the arc to that.
+
+; The strategy is simple: if our minimum arc multiplied by four is greater
+; than the current precision, set the scanning arc to that, otherwise set the
+; scanning arc to the current precision. Some details optimize situations
+; where the minimum arc is zero or the enemy is at the edge regions of our
+; scanning arc.
+
+!updateScanArc
+	; Construct our estimate of the largest possible arc we can sustain
+	; given minarc.
+
+	shl minarc, 2
+	cmp precision, minarc	; Is precision less than this?
+	jz !set_minimum_one	; If minarc is zero, handle the corner case
+	jle !set_minimum	; If precision is less than estimate, set to
+				; estimate
+!qagga
+	mov scanarc, precision	; Otherwise, just set to precision, fall through
+
+!set_scan
+	shr minarc, 2		; Correct the estimation back to minarc
+	opo p_arc, scanarc	; Instantiate the scanning arc
+	jmp !main_old_precis	; Done!
+
+!set_minimum_one
+	mov minarc, 2		; Gets nulled out by the shr.
+
+!set_minimum
+	mov scanarc, minarc	; Set scanning arc to our estimate
+	; Exceed doesn't seem to do good after all, as it causes misfires.
+	; Too bad, but it seems to have improvements on maintaining lock;
+	; we'll have to consider the reason for this.
+	; WTH?!? Less other wins /with/ exceed.. Serious bugs.
+	cmp @3, 2		; If we can do any better (since the enemy is
+	je !exceed		; off by the side), do so.
+	cmp @3, -2
+	je !exceed
+	jne !set_scan		; Otherwise, go and instantiate.
+	je !set_scan
+
+!exceed
+	; Extend more if it's already in the edge regions.
+	; This will miss certain cases where the enemy's just at the edge
+	; between -2 or 2 and -1 or 1. (Intellectual exercise: find the factor
+	; at which this never happens.)
+	mov fx, scanarc
+	shr fx, 1
+	add scanarc, fx
+	jne !set_scan
+	je !set_scan
+
+; --
+
+!scanExtend
+	; The full routine here will have logic like this: If we had an enemy,
+	; and we lost him, and he wasn't last seen just by our scanner range,
+	; then flip towards the accuracy he was just before we lost him. 
+	; Otherwise flip in some predetermined direction (doesn't matter which),
+	; and if we can extend our arc, do so.
+	; As it is, this just implements the latter.
+
+	; At this point, we have synchronized scanarc and precision. Since it's
+	; quicker to base our decisions upon precision, we do that here.
+	; We may be able to unify this and clamp-from-below later.
+
+	; TODO: Error here for debugging purposes.
+	err -2900
+
+	; Always flips to the right, currently.
+
+	mov rotation, precision	; Rotate to the right by half an arc
+	cmp precision, maxarc
+	jae !clampFromAbove
+	jmp !boom
+	cmp precision, 0
+	jgr !aok
+	inc precision
+	!aok
+	shl precision, 2	; Multiply by 4 since the center covers 1/4.
+	jmp !clampFromAbove
+
+!scanMinNarrow
+	; Determine minarc, then fall through to scanNarrow. TODO: Fix ratchet
+	; problem with minarc or move the code elsewhere. DONE.
+
+	; Determining minarc has to be done here because minarc itself is used
+	; in scanNarrow's caching mechanism, and because (if we want to avoid
+	; the ratchet effect,) we have to go through to main_new_precis anyway.
+
+	cmp ax, 380
+	jgr !nminzero
+	;jle !nminzero ;OVERRIDE
+	cmp ax, 190
+	jgr !nminone
+
+	mov newminarc, minoffset
+	add newminarc, ax
+	mov newminarc, [newminarc]
+	sub newminarc, 64		; UGLY!
+	;mov newminarc, 0		; Override
+	;delay 200
+	jmp !scanNarrow
+
+!nminzero
+	mov newminarc, 0
+	jmp !scanNarrow
+
+!nminone
+	mov newminarc, 1
+
+!scanNarrow
+	; If we have a lock (minimum arc) and accuracy hasn't changed, then
+	; there's no reason to calculate when we know what the result will be,
+	; so don't. Otherwise, calculate.
+
+	; But what if precision becomes newminarc *from above*? Then there's
+	; no cache, and boom!
+
+	cmp precision, newminarc
+	jgr !sNarrowCalc
+	cmp cacheacc, @3
+	jne !sNarrowCalc
+	err 1000
+
+	; Okay, we're cached. If we have a new minarc, we have to udpate the
+	; scan anyway, so do so. If not, just go right through to old_precis.
+
+	;err -25
+	;err scanarc
+	;err precision
+	;err rotation
+	;err @3
+
+	cmp newminarc, minarc
+	je !main_old_precis
+	mov minarc, newminarc
+	jne !main_new_precis
+
+!sNarrowCalc
+	; This is it. Input is current scanarc/precision (they're synched, but
+	; precision makes more sense) and accuracy, output is new precision
+	; and rotation. 
+	; The trick is that we round up appropriately before dividing, since
+	; shr by itself rounds down. Apart from that, it's a block-five narrow,
+	; which is 1/4 of the space for accuracies 0, -1, 1, and 1/8 for 2 and
+	; -2. Because of the symmetry, we only code for one half, then negate
+	; as appropriate afterwards.
+
+	mov minarc, newminarc
+	mov precision, scanarc	; Must base ourselves off the scanarc.
+	
+	cmp precision, 2	; Handle corner cases of 2, 1, and 0.
+	jle !narrow_to_zero
+
+	cmp @3, 1
+	jgr !scanNarrowTwos
+	je  !scanNarrowOnes
+	cmp @3, -1
+	jls !scanNarrowTwos
+	je  !scanNarrowOnes
+
+	; Fall through if 0; narrow the area straight ahead
+
+	mov rotation, 0		; Straight ahead
+	add precision, 3	; Round up.
+	shr precision, 2	; Size 1/4 centered on 0
+	jmp !main_new_precis
+
+!narrow_to_zero
+	; Handle corner case of 2 and 1. Since 0 is considered +/- 0.5, the 
+	; strategy is simple: If accuracy is zero, don't rotate, otherwise 
+	; rotate by accuracy, halving this if 1.
+
+	cmp precision, 2
+	mov precision, 0
+	jz !main_new_precis	; Case 0
+	mov rotation, @3
+	je !main_new_precis	; Case 2
+	sar rotation, 1
+	jne !main_new_precis	; Case 1
+
+!scanNarrowTwos
+	err 2800
+
+	mov rotation, precision
+        shl rotation, 3
+	sub rotation, precision
+	shr rotation, 3
+	sub scanarc, rotation
+
+	jmp !scanNarrowNeg	; Size 1/8 centered on +/- 7/8
+
+!scanNarrowOnes
+	; Can't be generalized to a form similar to scanNarrowTwos for some
+	; reason. Don't know why.
+	err 2700
+	mov rotation, precision
+	add precision, 3        ; Round up
+	shr rotation, 1         ; Now 1/2 to the right
+	shr precision, 2        ; Scanarc size 1/4
+
+	; Fall through to scanNarrowNeg(ate)
+
+!scanNarrowNeg
+	; Negate if symmetry demands it.
+	cmp @3, 0
+	jae !main_new_precis
+	neg rotation
+	jmp !main_new_precis
+
+; --
+
+!fire
+	; Rotate according to precision, fire, and then rotate back.
+	; Speed up once we see it works.
+
+	; HACK: Sped up
+
+	err scanarc
+	err 5400
+
+	cmp rotation, 4
+	jgr !indirect
+	cmp rotation, -4
+	jls !indirect
+
+	opo 15, rotation
+	jmp !qandar		; <<!!! NOTE!
+
+!indirect
+	opo p_trotate, rotation
+
+	cmp debug, 0
+	je !skip
+
+	opo p_arc, 0
+	ipo p_scan, ax
+	cmp ax, 1500
+	jgr !boom
+	opo p_arc, scanarc
+	delay 300
+!skip
+	opo 15
+	neg rotation
+	opo p_trotate, rotation
+	neg rotation
+	;mov scanarc, 2
+	jmp !qandar
+
+!boom
+	delay 150
+	int 0
+
+; -- TABLES --
+
+!dynminarc
+; 64 + floor(arctan(constraint / distance) / 2). The 64 is to prevent compiler 
+; errors, the arctan is in terms of hexdegrees, and the / 2 is because a scanarc
+; actually scans at twice the arc given (e.g scanarc 64 is half of the circle).
+; Constraint was empirically determined to be 9.353 based on a comparative 30000
+; round search with z1 against SDUCK (that's 1.169 times the robot diameter of 
+; 8 m, or 2.33825 times the radius)
+;* 128	123	119	115	
+;* 111	107	104	101	
+* 99	96	94	92	
+* 90	89	87	86	
+* 85	84	83	82	
+* 81	81	80	79	
+* 79	78	78	77	
+* 77	76	76	75	
+* 75	75	74	74	
+* 74	74	73	73	
+* 73	73	72	72	
+* 72	72	72	72	
+* 71	71	71	71	
+* 71	71	70	70	
+* 70	70	70	70	
+* 70	70	70	70	
+* 69	69	69	69	
+* 69	69	69	69	
+* 69	69	69	69	
+* 68	68	68	68	
+* 68	68	68	68	
+* 68	68	68	68	
+* 68	68	68	68	
+* 68	68	68	67	
+* 67	67	67	67	
+* 67	67	67	67	
+* 67	67	67	67	
+* 67	67	67	67	
+* 67	67	67	67	
+* 67	67	67	67	
+* 67	67	67	67	
+* 67	67	67	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	66	
+* 66	66	66	65	
+* 65	65	65	65	
+; SNIP lots of sixty-fives
+; SNIP lots of sixty-fours

@@ -1,0 +1,119 @@
+;Hrairoo
+; Simple factor-of-five scan
+
+#def scanarc
+
+mov scanarc, 64
+
+!restart
+opo p_arc, scanarc
+
+!loop
+	ipo p_scan, ax
+	cmp ax, 1500	; Found something?
+	jle !narrow	; Yes, narrow down
+	jgr !extend	; No, extend or flip (more strategy later)
+
+!narrow
+	cmp scanarc, 2 ; Already narrow enough? (+/- 2 degrees)
+	jle !stagetwo	; Yes, don't narrow it further
+
+	; Okay, first find out by how much we should narrow
+	; These all cost zero, so we do it this way
+	; Though premature optimization is the root of all evil... so we
+	; won't, not yet.
+
+	cmp @3, 1
+	jgr !narrowtwos
+	je  !narrowones
+	cmp @3, -1
+	jls !narrowtwos
+	je  !narrowones
+	; If we get here, it's straight ahead.
+
+!straight
+	shr scanarc, 1
+	je !restart
+	jne !restart
+
+!narrowones
+	shr scanarc, 1
+	mov bx, scanarc
+	shr scanarc, 1
+
+	je !postproc
+	jne !postproc
+
+!narrowtwos
+	mov bx, scanarc
+	shr scanarc, 3
+	sub bx, scanarc
+!postproc
+	cmp @3, 0
+	jgr !cont
+	neg bx
+!cont
+	; If we try to go lower than 2, don't. This gives us leeway to rotate
+	; without losing the opponent.
+	cmp scanarc, 2
+	jgr !fixed
+	; Possible TODO here, shr bx, 1; assumption is that the only value <2
+	; can be 1. But to experiment on this, we need a tracker for how many
+	; times we lose lock.
+	cmp scanarc, 1
+	mov scanarc, 2
+	jne !fixed
+	err -1
+	sar bx, 1
+!fixed
+	cmp scanarc, 2
+	jle !onlytwo
+	opo p_arc, scanarc
+	opo p_trotate, bx
+	je !loop
+	jne !loop
+
+!onlytwo
+	mov scanarc, 2
+	opo p_trotate, bx
+	je !loop
+	jne !loop
+
+!extend
+	; If we're at 64, flip, otherwise multiply by a factor of 4.
+	; (Or is 2 better?)
+	; TODO: Always flip/swing so the result is in the center (or in some
+	; other predetermined location making it easy to get a lock)
+	cmp scanarc, 64
+	je !flip
+	; TEST: This should not happen against sduck
+!lock
+	err scanarc
+	delay 20
+jmp !lock
+	shl scanarc, 2
+	cmp scanarc, 64
+	jle !restart
+	mov scanarc, 64
+	jgr !restart
+!flip
+	opo p_trotate, 64
+	je !loop
+	jne !loop
+
+!stagetwo
+	; To shoot or not to shoot, etc..
+	ipo p_scan, ax
+	cmp ax, 1500
+	;err ax
+	;jls !shoot
+!adjust
+	mov bx, @3
+	opo p_trotate, bx
+	je !stagetwo
+	jne !stagetwo
+!shoot
+	opo 15, @3
+	cmp @3, 0
+	je !loop
+	jne !adjust

@@ -1,0 +1,140 @@
+;Hrairoo
+; Simple factor-of-five scan
+
+#config engine=1
+#config armor=4
+#config weapon=1
+
+#def scanarc
+#def maxheat
+#def minheat
+
+mov minheat, 100
+mov maxheat, 356
+mov scanarc, 64
+
+mov ax, 1
+int 3
+
+opo p_throttle, 100
+
+!restart
+opo p_arc, scanarc
+
+!loop
+	opo p_steering, 7
+	ipo p_scan, ax
+	cmp ax, 1500	; Found something?
+	jle !narrow	; Yes, narrow down
+	jgr !extend	; No, extend or flip (more strategy later)
+
+!narrow
+	cmp scanarc, 2 ; Already narrow enough?
+	jle !stagetwo	; Yes, don't narrow it further
+
+	; Okay, first find out by how much we should narrow
+	; These all cost zero, so we do it this way
+	; Though premature optimization is the root of all evil... so we
+	; won't, not yet.
+
+	; Ten lines
+	cmp @3, 1
+	je !narrowones
+	cmp @3, -1
+	je !narrowones
+	cmp @3, 2
+	je !narrowtwos
+	cmp @3, -2
+	je !narrowtwos
+	; If we get here, it's straight ahead.
+
+!straight
+	shr scanarc, 1
+	je !restart
+	jne !restart
+
+!narrowones
+	shr scanarc, 1
+	mov bx, scanarc
+	shr scanarc, 1
+
+	je !postproc
+	jne !postproc
+
+!narrowtwos
+	mov bx, scanarc
+	shr scanarc, 3
+	sub bx, scanarc
+!postproc
+	cmp @3, 0
+	jgr !cont
+	neg bx
+!cont
+	opo p_trotate, bx
+	cmp scanarc, 2
+	jgr !setarc
+	mov scanarc, 2 ; we don't need any more accuracy
+!setarc	
+	opo p_arc, scanarc
+	je !loop
+	jne !loop
+!hold
+	ipo p_scan, ax
+	cmp ax, 15000
+	jle !loop
+	err ax
+je !loop
+jne !loop
+
+!extend
+	; We have lost him. If we're at 64, swivel by 64, otherwise multiply
+	; the scan factor by four.
+	; TODO: Do some swiveling to keep him centered no matter what radius
+	; we're at.
+	cmp scanarc, 64
+	je !swivel
+	shl scanarc, 2
+	cmp scanarc, 64
+	jle !restart
+	mov scanarc, 64
+	je !restart
+	jne !restart
+
+!swivel
+	opo p_trotate, 128
+	je !loop
+	jne !loop
+
+; Trace tracker
+!stagetwo
+	ipo p_scan, ax
+	cmp ax, 1500
+	jgr !extend
+	cmp @3, 0
+	je !shoot
+	mov ax, @3
+	;sal ax, 1
+	err ax
+	opo p_trotate, ax
+	opo p_steering, 5
+	jne !stagetwo
+!shoot
+	opo p_steering, 7
+	; Proportional response
+	; Get heat. May make this an open loop later to save time.
+	ipo p_heat, bx
+	cmp bx, minheat
+	jle !definitely
+	dec bx, minheat
+	ipo p_rand, cx
+	and cx, 255
+	cmp bx, cx
+	jle !definitely
+	je !stagetwo
+	jne !stagetwo
+
+!definitely
+	opo 15
+	;opo 15
+	je !stagetwo
+	jne !stagetwo

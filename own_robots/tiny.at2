@@ -1,0 +1,16 @@
+#config heatsinks=5
+#config engine=0
+#config scanner=0
+#config armor=5
+
+; Can't make it shorter!
+; (Comments and configs are optional)
+; Amenable to brute force? Say 24 values at each. 24^6 -> 2^27 - yes.
+; Include self-modification!
+
+; Hills: 3 lines, 4 lines, 8 lines, 16 lines, 25 lines.
+; Approval-then-CR way of finding out obscure parameter hills that would be
+; funny?
+
+opo 15, @3
+delay 54
