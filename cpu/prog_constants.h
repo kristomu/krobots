@@ -1,0 +1,47 @@
+
+#ifndef __COMMANDS
+#define __COMMANDS
+
+// Opcodes
+typedef enum { CMD_NOP = 0, CMD_ADD = 1, CMD_SUB = 2, CMD_OR = 3, CMD_AND = 4,
+	CMD_XOR = 5, CMD_NOT = 6, CMD_MPY = 7, CMD_DIV = 8, CMD_MOD = 9,
+	CMD_RET = 10, CMD_CALL = 11, CMD_JMP = 12, CMD_JLS = 13, CMD_JGR = 14,
+	CMD_JNE = 15, CMD_JE = 16, CMD_XCHG = 17, CMD_DO = 18, CMD_LOOP = 19,
+	CMD_CMP = 20, CMD_TEST = 21, CMD_MOV = 22, CMD_LOC = 23, CMD_GET = 24,
+	CMD_PUT = 25, CMD_INT = 26, CMD_IPO = 27, CMD_OPO = 28, CMD_DELAY = 29,
+	CMD_PUSH = 30, CMD_POP = 31, CMD_ERR = 32, CMD_INC = 33, CMD_DEC = 34,
+	CMD_SHL = 35, CMD_SHR = 36, CMD_ROL = 37, CMD_ROR = 38, CMD_JZ = 39,
+	CMD_JNZ = 40, CMD_JAE = 41, CMD_JLE = 42, CMD_SAL = 43, CMD_SAR = 44,
+	CMD_NEG = 45, CMD_JTL = 46 } command;
+
+#define LASTCOMMAND (CMD_JTL)
+
+// Memory location offsets
+typedef enum { REG_FLAGS = 64, REG_AX = 65, REG_BX = 66, REG_CX = 67,
+	REG_DX = 68, REG_EX = 69, REG_FX = 70, REG_SP = 71 } registers;
+
+// Components (this kind of explicit numeration is not in ATR2)
+typedef enum {COMP_SCANNER = 0, COMP_WEAPON = 1, COMP_ARMOR = 2, 
+	COMP_ENGINE = 3, COMP_HEATSINK = 4, COMP_MINES = 5, 
+	COMP_SHIELD = 6 } components;
+
+// Ports
+typedef enum { P_SPEEDOMETER = 1, P_HEAT = 2, P_COMPASS = 3, P_TURRET_OFS = 4,
+	P_TURRET_ABS = 5, P_DAMAGE = 6, P_SCAN = 7, P_ACCURACY = 8, P_RADAR = 9,
+	P_RANDOM = 10, P_THROTTLE = 11, P_TROTATE = 12, P_TAIM = 13,
+	P_STEERING = 14, P_FIRE = 15, P_SONAR = 16, P_ARC = 17, P_OVERBURN = 18,
+	P_TRANSPONDER = 19, P_SHUTDOWN = 20, P_CHANNEL = 21, P_MINELAYER = 22,
+	P_MINETRIGGER = 23, P_SHIELD = 24 } ports;
+
+#define LASTPORT (P_SHIELD)
+
+// Interrupts
+typedef enum { I_DESTRUCT = 0, I_RESET = 1, I_LOCATE = 2, I_KEEPSHIFT = 3,
+	I_OVERBURN = 4, I_ID = 5, I_TIMER = 6, I_ANGLE = 7, I_TARGETID = 8,
+	I_TARGETINFO = 9, I_GAMEINFO = 10, I_ROBOTINFO = 11, I_COLLISIONS = 12,
+	I_RESETCOLCNT = 13, I_TRANSMIT = 14, I_RECEIVE = 15, I_DATAREADY = 16,
+	I_CLEARCOM = 17, I_KILLS = 18, I_CLEARMETERS = 19 } interrupts;
+
+#define LAST_INTERRUPT (I_CLEARMETERS)
+
+#endif

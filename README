@@ -1,0 +1,152 @@
+K-Robots - an Advanced T-Robots II (AT-Robots 2) implementation for Linux
+
+==========
+
+Contents:
+
+   1. What is AT-Robots 2?
+   2. Where can AT-Robots 2 assembly guides be found?
+   3. What does K-Robots require and how can it be compiled?
+   4. How to use K-Robots
+   5. Known issues, bugs, and limitations
+
+==========
+
+1. What is AT-Robots 2?
+
+   AT-Robots 2 is a programming game where two or more robots compete in an 
+   arena to be the last robot standing. The robots, apart from customization 
+   given according to directives, are all equal; only programming (and some 
+   luck) determines who will win and who will lose.
+
+   AT-Robots 2 programs are written in a language akin to assembler. Programmers
+   use port input or output commands to observe or act on the outside world,
+   register and memory movement commands to treat the data obtained, and jumps 
+   for code logic.
+
+   For more information on AT-Robots 2, see http://necrobones.com/atrobots/
+
+==========
+
+2. Where can AT-Robots 2 assembly guides be found?
+
+   The best explanation of the AT-Robots 2 assembly language is the original
+   AT-Robots 2 game document, which is located at
+   http://necrobones.com/pub/atrobots/docs/atr2.txt . 
+
+   As K-Robots is intended to be an accurate implementation of AT-Robots 2, 
+   robots that compile and run in AT-Robots 2 should compile and run just as 
+   well in K-Robots, except where K-Robots is more strict about syntax in order
+   to avoid ambiguity.
+
+==========
+
+3. What does K-Robots require and how can it be compiled?
+
+   K-Robots require the SDL, SDL_gfx, and SDL_ttf libraries for drawing
+   graphics and rendering fonts. It also uses some Linux-specific calls for
+   file operations (specifically, distinguishing being unable to open a file
+   because it's not there and because of insufficient permissions).
+
+   To compile K-Robots, simply "make". To make the branch-predicted optimized 
+   version, first make krobots-opt-gen. Run it with a few robots and multiple 
+   rounds, then make krobots-opt-use.
+
+==========
+
+4. How to use K-Robots
+
+   K-Robots is a command-line program. By default, when supplied with the 
+   filenames of two or more robots, it'll open an SDL graphics window to show 
+   the match in progress, and then report the final results in the console when
+   done. This default behavior can be overridden, or the parameters of the 
+   match modified, by command line parameters.
+
+   K-Robots recognizes the following parameters:
+        -@          Use old-style (extremely powerful) shields.
+	-# <num>    Limit robot length to a maximum of <num> effective lines.
+	-% <num>    Enable insane (really high speed) missiles. Speed is related
+			to <num> according to equation given in console help.
+	-a	    Show robot scanner arcs from the start.
+	-b          Disable console mode keyboard polling so that line-buffering
+			works. Console mode only.
+	-c          Don't run, just compile and exit.
+	-d <num>    Set graphics framerate to <num> fps. Graphics mode only
+        -e          Report each robot error, as it happens, on the console.
+	-g          Disable graphics altogether.
+	-l <num>    Time out a round (with a tie) after <num> kilocycles.
+	-m <num>    Run a match of <num> rounds in all.
+	-q          Enable quirks mode - ignore some nonfatal errors.
+        -r1         Write simple bout info, as specified in the AT-Robots 2
+			document, to ktr2.rep
+        -r2         Write basic bout information to ktr2.rep
+	-r3         Write detailed bout info to ktr2.rep
+        -r4         Write very detailed bout info to ktr2.rep
+	-i1         Write simple round statistics to console after each round.
+	-i2         Write basic round statistics to console after each round.
+        -i3         Write detailed round statistics to console after each round.
+	-i4	    Write very detailed round statistics to console after each
+			round.
+	-s          Do not write any round- or bout outcome information to the
+			console, and also hide execution speed info.
+	-t <num>    Limit CPU execution time to <num> CPU cycles per game cycle,
+			maximum. #TIME limits still apply if lower.
+	-v          Be verbose - write compilation information as well as per-
+			cycle information.
+	-z <num>    Force the first round to use the Match ID specified in 
+			<num>. Use to replay certain rounds.
+	-w          Do not write any round outcome information to the console, 
+			only the outcome of the entire bout.
+
+   K-Robots also recognizes keypresses. Most of these only work in graphics 
+   mode, but a few do both in graphics and console mode. The key commands are:
+
+	ESC, "Q"    Quit the game. Results are given as if the match ended at 
+			this point. Works in both graphics and console mode.
+
+	SPACE,      Stop the current round and judge the round outcome there.
+	BACKSPACE       If multiple rounds have been specified, the remaining
+			rounds go on as normal.
+
+	"A"         Toggle display of scanning arcs. Graphics mode only.
+
+        +/-         Increase or decrease skip rate, or number of cycles played
+			per cycle that is rendered. Graphics mode only.
+
+	"W"         Do not write any more per-round information to the console.
+			Works in both graphics and console mode.
+
+	UP/DOWN     Scroll robot statistics display. Graphics mode only.
+	"U"/"D"
+
+   You can use K-Robots even if you haven't written any robots yet. Simply 
+   supply one of the example robots' filenames to see how it runs on its own 
+   (it should always win), or two or more and watch the contest. The example 
+   robots can also be used as opponents to test your own robots against.
+
+==========
+
+5. Known issues, bugs, and limitations
+
+   These limitations are known:
+	- The graphics mode is very slow, particularly at higher resolutions. 
+	  This happens because the program draws over other robots as part of
+	  transparency effects, and thus have to clear the entire arena with 
+	  each cycle.
+
+	- Missiles may appear to miss when the target is extremely close to the
+	  edge. This appears to be just an effect of how missiles are rendered.
+
+	- K-Robots does not read locked robots. Acknowledging that the authors 
+	  who locked their robots did not want them to be read by others, and 
+	  knowing the impossibility of locking robots against readers but not 
+	  programs, K-Robots deliberately contains no code to unlock robots.
+
+	- K-Robots will not run if it can't find the Freetype font Deja Vu Sans
+	  Mono (Bold), DejaVuSansMono-Bold.ttf. It searches the run directory as
+	  well as /usr/share/fonts/truetype/ and /usr/share/fonts/freetype/
+	  (with or without the suffix ttf-dejavu/ ). This shouldn't be 
+	  necessary, but I haven't found a way of making it truly portable.
+
+	- The code is almost all in .cc files that are included directly. This
+	  permits some optimization that would otherwise not be done by g++.

@@ -1,0 +1,13 @@
+; Test against anything. This should keep alive if the def line is left on,
+; and otherwise explode - it tests whether user variables have precedence above
+; builtins, as in ATR2.
+
+#def nop
+
+mov nop, 1
+cmp nop, 1
+jne !boom
+!q
+jmp !q
+!boom
+int 0

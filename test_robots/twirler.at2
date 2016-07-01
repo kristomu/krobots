@@ -1,0 +1,37 @@
+; Run against sduck. This checks the behavior at the edges.
+; Native statistics:
+
+;2
+;9997 10000 9997    3 100 182 107535 54990 542793 3211904 0 twirler
+;   3 10000    0 9997   0   0      0     0      0 3057629 0 sduck
+;Wins Runs  Kill Deth Arm Hot SFired Hits  DMGTot Lifetim E Name
+
+
+; i.e wins 99.97% of the time.
+
+; KTR stats are only slightly different:
+;2
+;9995 10000 9995    5  99 243 163704 95451 535546 3416574 163704 twirler
+;   5 10000    0 9995   0   0      0     0      0 3086904      0 sduck
+;Wins Runs  Kill Deth Arm Hot SFired Hits  DMGTot Lifetim E Name
+
+opo p_arc, 2; +/- 2
+
+mov bx, 1
+ipo p_rand, cx
+and cx, 255
+cmp cx, 128
+jae !loop
+neg bx
+
+!loop
+ipo p_scan, ax
+cmp ax, 1500
+jls !fuego
+opo p_trotate, bx
+jmp !loop
+!fuego
+err ax			; Not noted in ErrorCount on native??
+mov ax, @3
+opo 15, ax
+jmp !loop

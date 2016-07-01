@@ -1,0 +1,145 @@
+;       unproven: 16 17 18 19
+
+; tests: 10, 11, 12, 13, 19
+; can't be tested here: 18
+; comms in another robot
+
+; Error in handling int 11 detected, but I'm too tired to figure out what.
+; Tomorrow!
+
+; Test is intended for two copies of self. The test assumes ports work, and
+; also that interrupts 1-9 inclusive (specifically, 7), work.
+; Tests not done: comms, robot-robot collisions, relative penalty values.
+
+; Check that 11 inits to 0 (should be time since origin if no shots have
+; occurred)
+int 11
+mov bx, 100
+cmp ex, 0
+jne !boom
+mov bx, 99
+cmp fx, 0
+jne !boom
+
+; Orient to the center so we won't cause a false positive crash later
+ipo p_rand, ex
+and ex, 255
+add ex, 375
+ipo p_rand, fx
+and fx, 255
+add fx, 375
+int 7 ; result in ax
+ipo 3, cx ; Current heading
+sub ax, cx
+opo p_steering, ax ; go there
+
+mov bx, 101
+int 10
+cmp fx, ex	; FX number of matches, EX current match
+		; First match is 1, not 0
+jls !boom
+cmp dx, 2	; 2 robots active? (Can't check EX,FX)
+je !cont	; Yes, keep on
+!boom
+err bx
+delay 100
+int 0
+!cont
+err ex
+delay 100
+err fx
+delay 202
+
+; Find the enemy and inflict damage so that we can test int 11
+; First check that int 11 keeps counting and isn't stuck at 0
+; For some reason, these are equal in native but not in our reimp, even though
+; native advances the cycle by one between the calls.
+delay 4		; Required to get the same behavior. Is then 65,64 in native
+		; and 64,64 in reimp.
+int 6
+mov ax, fx	; 16 bit lsb
+int 11
+mov bx, 102
+cmp ax, ex
+jls !boom
+cmp ax, fx
+jls !boom
+
+; Here we're lazy and use twirling
+opo p_arc, 2 ; +/-2
+!loop
+ipo p_scan, ax
+cmp ax, 1500
+jle !found
+opo p_trotate, 2
+jmp !loop
+!found
+; Okay, found something. Fire. Then wait until we're certain the other one has
+; hit us, and check that the EX/FX values are less than the clock.
+; TODO: Check if collisions count as "hurt". They probably do. Also check if
+; damage from heat burning off armor also counts as "hurt".
+opo 15, @3
+delay 880
+int 6
+mov ax, fx	; 16 bit lsb
+int 11
+mov bx, 103
+cmp ax, fx	; Time since fired shot hit a robot
+jle !boom
+delay 700	; Wait until we get hit, too
+add ax, 150	; 700/5 + a little extra
+mov bx, 98
+int 11
+cmp ax, ex	; Time since we got hurt
+jle !boom
+
+; Now test absolute speed. This'll backfire if we hit something.
+opo p_throttle, 100
+delay 200
+int 11
+opo p_throttle, 0
+mov bx, 104
+cmp dx, 400
+jne !boom
+delay 200
+int 11
+cmp dx, 0
+jne !boom
+
+; Test collision count
+mov bx, 105
+int 12
+cmp fx, 0		; haven't collided thus far
+jne !boom
+opo p_throttle, -75	; Okay, let's crash into something.
+delay 10
+!secloop
+ipo 1, ax
+cmp ax, 0
+jne !secloop
+int 12
+mov bx, 106
+cmp fx, 1		; One crash
+jne !boom
+cmp @8, 1
+jne !boom
+mov bx, 107
+int 13			; Reset count
+int 12
+cmp fx, 0
+jne !boom
+
+; Finally, check meter resets
+!q
+opo p_throttle, 10
+cmp @9, 0
+je !q
+opo p_throttle, 0
+!qr
+int 19
+mov bx, 108
+cmp @9, 0
+jne !boom
+err 222
+!succ
+jmp !succ

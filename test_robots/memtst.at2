@@ -1,0 +1,356 @@
+;    0        Dspd        Desired speed robot is trying to achieve.
+;    1        Dhd         Desired heading robot is trying to achieve.
+;    2        tpos        Current turret offset
+;    3        acc         accuracy value from last scan
+;    4        swap        temporary swap space used by swap/xchg instruction
+;    5        tr-id       ID of last target scanned (by any scan).
+;    6        tr-dir      Relative heading of last target scanned.
+;    7        tr-spd      Throttle of last target scanned.
+;    8        ColCnt      Collision count.
+;    9        Meters      Meters travelled. 15 bits used.. (32767+1)=0
+;   10        ComBase     Current base of the communications queue
+;   11        ComEnd      Current end-point of the communications queue
+;   13        tr-vel      Absolute speed (cm/cycle) of last target scanned
+
+; As usual, run two of these against each other.
+
+; Check 0 and 1 by setting a certain speed and heading.
+; This goes after porttst, so we're certain the ports work as intended.
+
+;error 0	; Verified to work
+;call !chkcomm	; Verified to work, not needed.
+jmp !real
+
+!boom
+error bx
+delay 200
+int 0
+
+!real
+
+mov bx, 401
+mov ax, @1		; <<--- this is an absolute heading!
+neg ax
+opo p_steering, 80
+add ax, @1
+!reiter
+cmp ax, 0		; Rotate round scale
+jae !next
+add ax, 256
+jmp !reiter
+!next
+opo p_throttle, 100
+mov cx, @0
+opo p_throttle, 0	; immediately go to 0 - this is *desired* speed.
+cmp ax, 80
+jne !boom
+cmp cx, 100
+jne !boom
+
+; Move to standard positions so we can check relative heading of enemy later.
+int 5
+; UID 1 goes to 500, 100; UID 2 goes to 500, 900.
+mov ex, 500
+cmp fx, 1
+mov fx, 100
+je !set
+mov fx, 900
+!set
+; Get angle
+int 7	; now angle is in ax
+ipo 3, cx	; current heading
+sub ax, cx
+opo 14, ax	; Turn in that direction
+opo p_throttle, 100	; Go there
+mov ax, ex
+mov cx, fx
+!loop
+; Get current position (to ex, fx) and subtract 
+int 2
+sub ex, ax
+sub fx, cx
+cmp ex, 30
+jae !loop
+cmp ex, -30
+jle !loop
+cmp fx, 30
+jae !loop
+cmp fx, -30
+jle !loop
+opo p_throttle, 0
+
+; Okay, now turn right
+mov ax, 64
+ipo 3, cx
+sub ax, cx
+opo p_steering, ax
+
+!delayperiod
+; Wait until global cycle is 460, so that we're synched
+int 6
+cmp fx, 460
+jle !delayperiod
+
+;    2        tpos        Current turret offset
+mov bx, 402
+opo p_taim, 23
+cmp @2, 23
+jne !boom
+
+;    3        acc         accuracy value from last scan
+
+; We check accuracy by twirling until something is found. If the accuracy is
+; either -2 or 2, then OK, otherwise boom (first). Then we twirl, recording
+; whether we've seen 2, 1, 0, -1, -2. If there's a gap, then boom (second).
+
+; HACK to examine opo 15 problem. This makes the lower bot acquire target
+; first, which is the one that exhibited the problem.
+opo p_trotate, 128
+
+mov bx, 403
+opo p_arc, 2	; +/- 2 as usual
+ipo p_scan, ax
+cmp ax, 1500
+jae !twirl
+opo p_trotate, 128	; so that we won't start inside
+!twirl
+opo p_trotate, 1
+ipo p_scan, ax
+cmp ax, 1500
+jae !twirl
+; Okay, just out of twirl. Should be -2 or 2
+cmp @3, -2
+je !okay
+cmp @3, 2
+jne !boom
+!okay
+; Now record. We change cx if -2 or 2, dx if -1 or 1, ex if 0
+mov cx, 0
+mov dx, -1
+mov ex, -1
+!twirlinside
+opo p_trotate, 1
+ipo p_scan, ax
+cmp ax, 1500
+jae !aftwirl	; out of it again?
+err @3
+opo 15, @3
+; Okay, so still inside. Set the appropriate register and variable
+cmp @3, -1
+jne !ii
+mov dx, 0
+!ii
+cmp @3, 1
+jne !iii
+mov dx, 0
+!iii
+cmp @3, 0
+jne !twirlinside
+mov ex, 0
+jmp !twirlinside
+!aftwirl
+mov bx, 404
+; Now just compare em all
+cmp cx, 0
+jne !boom
+mov bx, 44
+cmp dx, 0
+jne !boom
+mov bx, 45
+cmp ex, 0
+jne !boom
+mov bx, 46
+; Now check versus last accuracy. When we lose lock, accuracy should be 0.
+cmp @3, 0
+jne !boom
+
+;    4        swap        temporary swap space used by swap/xchg instruction
+; Not applicable.
+
+;    5        tr-id       ID of last target scanned (by any scan).
+; Should be 2 if we're 1 or vice versa.
+mov bx, 405
+int 5	; now transponder is in fx
+cmp fx, 1
+jne !two
+cmp @5, 2
+jne !boom
+jmp !donefive
+!two
+cmp @5, 1
+jne !boom
+jmp !donefive
+!donefive
+
+;    6        tr-dir      Relative heading of last target scanned.
+;    7        tr-spd      Throttle of last target scanned.
+; These must be checked in the same way the relevant interrupt was.
+;   13        tr-vel      Absolute speed (cm/cycle) of last target scanned
+; This could be a bit difficult. Make robots parallel, then keep scanners
+; locked; try various speed changes and see that cm/cycle changes.
+
+
+; Wait until 1020, again for the synch
+!delayperiodx
+; Wait until global cycle is 1020, so that we're synched
+int 6
+cmp fx, 1020
+jle !delayperiodx
+
+
+mov bx, 406
+; Now scan the opponent again. Throttle should be 1 and direction either 64
+; or 192 since the scanner's either pointing straight up or straight down
+; and the robot's facing right.
+opo p_arc, 64
+opo p_taim, 64
+ipo p_scan, ax
+cmp ax, 1500
+jle !okaysc
+; Not there, flip
+opo p_trotate, 128
+ipo p_scan, ax
+!okaysc
+;DEBUG
+;mov bx, @6
+;neg bx
+cmp @6, 64
+je !okayth
+cmp @6, 192
+jne !boom
+!okayth
+; Now check speed - this is why we had to be synched up there; so that our
+; scanners are fixed on each other.
+opo p_throttle, 100
+delay 200
+ipo p_scan, ax
+cmp ax, 1500
+jae !boom
+mov bx, @7
+cmp @7, 100
+delay 50		; This is needed so #2 doesn't scan #1's deceleration
+opo p_throttle, 0
+jne !boom
+mov bx, 407
+mov bx, @13
+cmp @13, 400		; Since we're already checking speeds, check abs speed
+jne !boom		; too.
+
+;    8        ColCnt      Collision count.
+;    9        Meters      Meters travelled. 15 bits used.. (32767+1)=0
+; Because of our p_throttle shenanigans, this should be nonzero. Check if it is;
+; if not, boom. Then reset and see that it's zero (if not, boom). Finally,
+; travel for a while and check again that it's nonzero, travel a bit more, and
+; check that this is greater than previously, if not, boom.
+
+; Check meters first, as that's simpler.
+mov bx, 408
+; First, we've moved a bit, so we should have a positive value
+cmp @9, 0
+jle !boom
+; Now check that it'll increment (even when running backwards)
+mov cx, @9
+opo p_throttle, -50
+delay 100
+mov dx, @9
+opo p_throttle, 0
+delay 100
+cmp dx, cx
+jle !boom
+; Finally, reset and check that it's 0, and that it'll still increment.
+int 19
+cmp @9, 0
+jne !boom
+opo p_throttle, -50
+delay 100
+opo p_throttle, 0
+cmp @9, 0
+jle !boom
+delay 100
+
+; TODO: Check Collision count here . DONE
+
+!colcnt
+mov bx, 409
+; We haven't collided yet, so it should start off as 0.
+cmp @8, 0
+jne !boom
+; Full speed ahead!
+opo p_throttle, 100
+delay 50		; Wait till we got some speed so it won't break early
+; And loop until there's a crash
+!colloop
+ipo p_spedometer, ax
+cmp ax, 0
+jne !colloop
+cmp @8, 1	; Also exposes a collision detector bug if it "detects" a crash
+jne !boom	; multiple times. AT2 doesn't.
+; Reset colcount and check that it has indeed reset.
+int 13
+cmp @8, 0
+jne !boom
+
+jmp !f
+
+;   10        ComBase     Current base of the communications queue
+;   11        ComEnd      Current end-point of the communications queue
+; Check, send single message (and recv, set right channel), then check again.
+; Receive and check base.
+; Now a call, since it was pretty time-dependent.
+!chkcomm
+; Starting off, both should be zero because there are no messages
+mov bx, -401
+cmp @10, 0
+jne !boom
+cmp @11, 0
+jne !boom
+; Set channel to something, and verify
+opo 21, 1234
+ipo 21, ax
+cmp ax, 1234
+jne !boom
+; Transmit something and wait a while (for synch)
+mov ax, 1
+int 14
+delay 50
+; Now combase should be 0, comend be 1, since we haven't read anything.
+; (Assuming the other one is less than 50 CPU cycles = 10 cycles behind)
+cmp @10, 0
+jne !boom
+cmp @11, 1
+jne !boom
+; Read it.
+int 15
+; Now both should be 1
+cmp @10, 1
+jne !boom
+cmp @11, 1
+jne !boom
+; Now do something ugly: wraparound at 256
+mov ax, 256
+!commloop
+int 14
+dec ax
+cmp ax, 0
+jgr !commloop
+delay 50
+; Now combase should be 2, comend 1.
+cmp @10, 2
+jne !boom
+cmp @11, 1
+jne !boom
+; Read off two messages to exploit wraparound maximally
+int 15
+int 15
+; Now it should be 4,1 (FIFO).
+cmp @10, 4
+jne !boom
+cmp @11, 1
+jne !boom
+ret
+
+!f
+opo p_throttle, -75
+err 444
+!q
+jmp !q

@@ -1,0 +1,37 @@
+; This tests the rollover behavior of the comms by sending >256 messages and
+; then reading them off again. On success, it loops forever with err -2.
+; On error, it dies.
+
+; Run against itself, in a pair.
+
+opo 21, 1814
+delay 10
+
+; Now send a lot of messages, with the counter as the payload. This'll let us
+; detect off-by-ones.
+
+mov ax, -1
+!loop
+inc ax
+int 14
+cmp ax, 767
+jls !loop
+
+mov ax, -2
+
+mov bx, 767
+sub bx, 255
+!chk
+inc bx
+int 15
+cmp fx, bx
+jne !boom
+cmp bx, 767
+jls !chk
+
+!ok
+err -2
+jmp !ok
+
+!boom
+int 0

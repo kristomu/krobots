@@ -1,0 +1,106 @@
+; Part one of the interrupt tests.
+; Run with 3x itself.
+
+; Expected results:
+; KTR
+;3
+;   0 2000     0 2000  0    0   4000 110      950  208000    4000 int_test
+;   0 2000     0    0  99   0   4000  82      743 2000000 8668100 int_test
+;   0 2000     0    0  99   0   4000  78      742 2000000 8672130 int_test
+;Wins Runs  Kill Deth Arm Hot SFired Hits  DMGTot Lifetim E       Name
+
+; ATR2
+;3
+;   0 2000     0 2000   0   0   4000 110      760  210000 0 int_test
+;   0 2000     0    0 100   0   4000  92      698 2000000 0 int_test
+;   0 2000     0    0 100   0   4000  94      872 2000000 0 int_test
+;Wins Runs  Kill Deth Arm Hot SFired Hits  DMGTot Lifetim E Name
+
+; Test reset (disabled)
+;int 1 	; after reset it starts at pos 1 not 0! So int 1 / int 0 should be boom
+;int 1
+;int 0
+
+;Test locate (verified correct)
+;Test overburn and fire
+;First shot should be yellow and travel more quickly.
+opo 15, -4
+mov ax, 1
+int 4
+opo 15, -4
+mov ax, 0
+int 4
+
+;Test keepshift (verified correct)
+
+; Test transponder. This should kill the first bot.
+; The first UID is 1, not 0.
+int 5
+err fx
+delay 500
+cmp fx, 1
+mov bx, 99
+jne !ok
+!boom
+err bx
+int 0
+!ok
+mov dx, fx	; Now dx is transponder
+
+; Adjust position for scanner check later
+mov ex, dx
+and ex, 1
+cmp ex, 1
+je !sec
+mov ax, 64
+jmp !thr
+!sec
+mov ax, 0
+!thr
+; Get current position
+ipo 3, bx
+sub ax, bx
+opo 14, ax ; turn there
+
+; Do some scanning and check Target ID and Target Info
+mov ex, 0
+mov fx, 0
+opo p_arc, 64 ; half full arc
+opo 13, 0
+delay 100
+ipo p_scan, ax
+cmp ax, 1500
+jle !next
+opo p_trotate, 128
+ipo p_scan, ax
+cmp ax, 1500
+jle !next
+int 0
+
+!next
+int 9	; EX unpredictable, FX 0
+cmp fx, 0
+mov bx, 100
+jne !boom
+
+; extended Int 9 test
+; Keepshift on
+mov ax, 1
+int 3
+!loopint9
+ipo p_scan, ax
+int 9
+err ex
+cmp ex, 64
+je !done
+cmp ex, 192
+je !done
+jmp !boom
+
+!done
+err 111
+jmp !done
+
+; Remaining: 
+;	proven: 2 3 6 7 14 15
+;	unproven:10 11 12 13 16 17 18 19

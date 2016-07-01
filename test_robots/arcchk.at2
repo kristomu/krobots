@@ -1,0 +1,25 @@
+; Check whether the scanner arc is drawn correctly
+; First set the arc to 2 (+/- 2), then fire at -4 and 4.
+
+; Firing doesn't travel along the edge lines. What is more, where it fails
+; depends on at what angle we are. The turret angle input is the same on both
+; fire and draw_scanner, so that's not it.
+
+#config weapon=0
+
+opo p_trotate, 4
+opo p_arc, 2
+!ok
+ipo p_scan, ax
+opo 15, -2
+opo 15, -2
+opo 15, -2
+opo 15, -2
+delay 100
+ipo p_scan, ax
+opo 15, 2
+opo 15, 2
+opo 15, 2
+opo 15, 2
+delay 100
+jmp !ok

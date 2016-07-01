@@ -1,0 +1,477 @@
+;  1   0    I  Spedometer        Returns current throttle setting[-75- 100]
+;  2   0    I  Heat Sensor       Returns current heat-level       [0 - 500]
+;  3   0    I  Compass           Returns current heading          [0 - 255]
+;  4   0    I  Turret Sensor     Returns current turret offset    [0 - 255]
+;  5   0    I  Turret Sensor     Returns absolute turret heading  [0 - 255]
+;  6   0    I  Damage Sensor     Returns current armor level      [0 - 100]
+;  7   1    I  Scanner           Returns range to nearest target in scan arc
+;  8   1    I  Accuracy          Returns accuracy of last scan     [-2 - 2]
+;  9   3    I  Radar             Returns range to nearest target
+; 10   0    I  Random Generator  Returns random number     [-32768 - 32767]
+; 11   0    O  Throttle          Sets throttle                  [-75 - 100]
+; 12   0    O  Rotate Turret     Offsets turret (cumulative)
+; 13   0    O  Aim Turret        Sets turret offset to value      [0 - 255]
+; 14   0    O  Steering          Turn specified number of degrees
+; 15   3    O  Weapon control    Fires weapon w/ angle adjustment  [-4 - 4]
+; 16  40    I  Sonar             Returns heading to nearest target[0 - 255]
+; 17   0   I/O Scan-Arc          Sets/Returns scan-arc width.      [0 - 64]
+; 18   0   I/O Overburn          Sets/Returns overburn status
+; 19   0   I/O Transponder       Sets/Returns current transponder ID
+; 20   0   I/O Shutdown-Level    Sets/Returns shutdown-level.
+; 21   0   I/O Com Channel       Sets/Returns com channel setting
+; 22   0   I/O Mine Layer        Lays mine or Returns mines-remaining.
+; 23   0   I/O Mine Trigger      Detonates/returns previously-placed mines.
+; 24   0   I/O Shield            Sets/Returns shield's status (0=off, else=on)
+
+; Test should run with two copies of itself.
+
+#config armor=0
+#config heatsinks=0
+#config shield=3
+
+#def high
+#def low
+#def spd
+
+#def targetx
+#def targety
+
+mov high, -32760
+mov low, 32760
+mov spd, 100
+
+jmp !real
+!boom
+delay 100
+err bx
+delay 10
+err bx
+delay 100
+int 0
+
+!real
+error -1	; Just to see how quick the feedback is
+mov bx, 299
+
+; Before we do anything else, get into position
+mov targetx, 500
+mov targety, 110
+ipo p_transponder, ax
+cmp ax, 1
+jne !okmove
+mov targety, 890
+
+!okmove
+
+; Get angle
+mov ex, targetx
+mov fx, targety
+int 7   ; Find angle. Angle is in ax
+
+; Go there
+ipo 3, cx ; Current heading
+sub ax, cx
+opo 14, ax ; Turn in that direction
+
+cmp dx, 0
+opo p_throttle, spd
+jne !skipdelay
+delay 20
+!skipdelay
+mov dx, 10
+!moveloop
+opo p_throttle, spd
+dec dx		; Feedback for wayward ones - every 10 loop iters, we
+		; readjust our angle
+cmp dx, 0
+jle !okmove
+int 2 ; get x,y into ex,fx
+
+; Approximation to Euclidean distance:
+; dx + dy − (1/2) * min(dx,dy)
+
+sub ex, targetx
+sub fx, targety
+cmp ex, 0
+jae !okex
+neg ex
+!okex
+cmp fx, 0
+jae !okfx
+neg fx
+!okfx
+
+cmp ex, fx
+jls !movetx
+mov ax, ex
+jmp !donemov
+!movetx
+mov ax, fx
+!donemov
+sar ax, 1
+mov bx, ex
+add bx, fx
+sub bx, ax
+
+mov spd, bx
+shr spd, 1	; Proportional control rules.
+cmp bx, 10
+jgr !moveloop
+jmp !donem
+cmp ex, 11
+jgr !moveloop
+mov spd, 50
+cmp fx, -11
+jle !moveloop
+mov spd, 25
+cmp fx, 11
+jgr !moveloop
+!donem
+opo p_throttle, 0	; we're there
+
+; Finally, point away from the wall
+mov ex, 400
+mov fx, 500
+int 7
+ipo 3, cx
+sub ax, cx
+opo 14, ax
+delay 300
+
+; ----------- TESTS -------
+
+; Test speedometer. Fails if we collide.
+err -3
+mov bx, 300
+opo p_throttle, 10
+delay 20
+ipo p_spedometer, ax
+cmp ax, 10
+jne !boom
+opo p_throttle, 0
+
+; Test heat level (heat up by firing). Requires firing to work, so also
+; tests that.
+
+;Test compass and steering. We take the current heading. If it's 255, no go,
+;otherwise we steer to the right one and check that the new heading has been
+;incremented by one.
+err -4
+mov bx, 302
+ipo p_compass, ax
+cmp ax, 255
+jne !compat
+opo p_steering, -1
+delay 5
+ipo p_compass, ax
+!compat
+opo p_steering, 1
+delay 5
+ipo p_compass, cx
+sub cx, ax
+cmp cx, 1
+jne !boom
+
+; Test heat level (heat up by firing). Requires firing to work, so also
+; tests that, and requires taim in order to be certain not to hit another,
+; so tests that too.
+err -5
+mov bx, 301
+ipo p_heat, ax
+cmp ax, 0
+jne !boom
+opo p_taim, 128
+opo 15
+ipo p_heat, ax
+cmp ax, 0
+je !boom
+
+;  4   0    I  Turret Sensor     Returns current turret offset    [0 - 255]
+;  5   0    I  Turret Sensor     Returns absolute turret heading  [0 - 255]
+; Test the turret sensors. To do this we aim the turret to 0. Then we check
+; that 4 returns 0 and that 5 returns whatever the compass (that we proved in
+; the previous test) would.
+err -6
+mov bx, 303
+opo p_taim, 0
+ipo p_turret_ofs, ax
+cmp ax, 0
+jne !boom
+ipo p_turret_abs, dx
+ipo p_compass, cx
+cmp dx, cx
+jne !boom
+
+;  6   0    I  Damage Sensor     Returns current armor level      [0 - 100]
+;  7   1    I  Scanner           Returns range to nearest target in scan arc
+;  8   1    I  Accuracy          Returns accuracy of last scan     [-2 - 2]
+;  9   3    I  Radar             Returns range to nearest target
+; Checking the damage sensor will be hard, but we can check that it returns 100
+; at start. Then we can scan (twirl), lock on and fire, wait a while, and check
+; the damage sensor again. Once we've locked on, we can also turn towards the
+; enemy and check the radar (should decrease when we head towards, increase
+; when we head away).
+
+; (Would it be possible to do some GCD trick to figure out the exact position
+;  of an enemy without narrowing it down? It might. Super advanced twirler.)
+
+err -7
+mov bx, 304
+ipo p_damage, ax
+cmp ax, 98		; this'll fail in a continuous heat scenario.
+			; 98 so that crashes don't trigger false positive.
+			; Now 84 so that an unfortunate shot up on the first
+			; opo doesn't trigger false positive, either.
+jls !boom
+opo p_arc, 2		; +/- 2, corresponds to accuracy
+delay 980		; Let the other guy get in place.
+!twirl
+ipo p_scan, ax
+cmp ax, 1500
+jle !found
+opo p_trotate, -2
+je !twirl
+jne !twirl
+!found
+error ax
+mov bx, 305
+; Get relative offset of turret and steer there
+; Bluesky would be to use range setting for "delay" so it gets out of
+; delay just after missile hits. Or to use radar and compare range (since
+; there's only one other on the field)
+ipo p_turret_ofs, cx
+opo p_steering, cx
+opo p_taim, 0
+delay 100
+ipo p_scan, ax
+cmp ax, 1500
+jgr !boom
+; fire!
+opo 15, @3
+; wait a long while to get hurt
+mov fx, 650
+!chkdam
+ipo p_damage, ax
+cmp ax, 100
+jne !radar
+dec fx
+cmp fx, 0
+jle !boom
+jmp !chkdam
+
+; Check radar
+!radar
+err -8
+mov bx, 306
+; Bug in ATR2 proper! ax - cx = 1 some times. Probably a rounding error.
+ipo p_scan, ax
+ipo p_radar, cx
+mov dx, ax
+sub dx, cx
+cmp dx, 0
+jae !okradar
+neg dx
+!okradar
+cmp dx, 2
+jae !boom
+
+mov bx, 307
+delay 100
+opo p_throttle, 100
+delay 50
+opo p_throttle, 0
+ipo p_radar, dx
+cmp cx, dx
+jle !boom
+
+; 10   0    I  Random Generator  Returns random number     [-32768 - 32767]
+; 11   0    O  Throttle          Sets throttle                  [-75 - 100]
+; 12   0    O  Rotate Turret     Offsets turret (cumulative)
+; 13   0    O  Aim Turret        Sets turret offset to value      [0 - 255]
+; 14   0    O  Steering          Turn specified number of degrees
+; 15   3    O  Weapon control    Fires weapon w/ angle adjustment  [-4 - 4]
+; 16  40    I  Sonar             Returns heading to nearest target[0 - 255]
+; 17   0   I/O Scan-Arc          Sets/Returns scan-arc width.      [0 - 64]
+
+; 11 and 13 have already been checked (above). 14 also, 15 also, not 16.
+; 17 also (when twirling). To check 16 we have to get within 250 m, test it,
+; then go beyond 250 m and test again. Should return -1 on latter, but hard
+; to confirm it works on former (do a shot and see).
+
+; Check sonar
+; First get within range
+err -9
+mov bx, 308
+opo p_throttle, 75
+!ninrange
+opo p_trotate, @3	; Stay on target!
+ipo p_scan, dx
+cmp dx, 250
+jgr !ninrange
+opo p_throttle, 0
+delay 50
+mov cx, 25
+!sonloop
+ipo p_sonar, dx
+cmp dx, 0
+jls !boom	; means nothing was found
+
+;; This doesn't work.
+;; What we need is a check of whether the return is +/-64 degrees of the
+;; enemy location. Within_angle with enemy_location - 64 as start, 
+;; enemy_location + 64 as end, and the return value as check_angle. Any failure
+;; boots it out.
+
+;; end_angle = fmod(circle + end_angle - start_angle, circle);
+;; to_check = fmod(circle + to_check - start_angle, circle);
+;; return(end_angle >= to_check);
+
+; Check that we're aligned
+opo p_arc, 0
+ipo p_scan, ex
+
+sub dx, @1
+add dx, 1024
+and dx, 255
+
+mov ex, 220 	; start angle	256 - 33
+mov fx, 33	; end angle	33
+		; + 1 so that rounding errors are avoided
+
+add fx, 1024
+sub fx, ex
+and fx, 255
+
+add dx, 1024
+sub dx, ex
+and dx, 255
+cmp fx, dx
+;delay 100
+;jls !boom
+;sub fx, dx
+;err fx
+;delay 100
+
+dec cx
+cmp cx, 0
+jgr !sonloop
+
+; Check the range - should be 64
+;mov dx, high
+;sub dx, low
+;mov bx, dx
+;err dx
+;cmp dx, 64
+;jgr !boom
+
+; 18   0   I/O Overburn          Sets/Returns overburn status
+; 19   0   I/O Transponder       Sets/Returns current transponder ID
+; 20   0   I/O Shutdown-Level    Sets/Returns shutdown-level.
+; 21   0   I/O Com Channel       Sets/Returns com channel setting
+; 22   0   I/O Mine Layer        Lays mine or Returns mines-remaining.
+; 23   0   I/O Mine Trigger      Detonates/returns previously-placed mines.
+; 24   0   I/O Shield            Sets/Returns shield's status (0=off, else=on)
+
+; Already checked elsewhere: 19, output: 22 23.
+
+!sec
+; We test 18 by flipping it on, firing, switching it off, firing again, and
+; comparing heat. We wait until all the heat is gone between firings so we
+; have an accurate measurement.
+; (heat sensor presumed working, tested earlier)
+err -10
+mov bx, 309
+opo p_overburn, 0
+ipo p_overburn, ax
+cmp ax, 0
+jne !boom
+opo 15, -2
+ipo p_heat, ax
+!firstwait
+ipo p_heat, cx
+cmp cx, 0
+jne !firstwait
+opo p_overburn, 1
+opo 15, 4
+ipo p_heat, dx
+cmp ax, dx
+jae !boom
+opo p_overburn, 0
+!secwait
+ipo p_heat, cx
+cmp cx, 0
+jne !secwait
+
+; Check shutdown level. This is easy enough, set it to 1 and then
+; check its heat level upon return. Shutdown at x is triggered at heat level x,
+; then stays off until we reach x - 50. (reimp doesn't do this yet)
+err -11
+mov bx, 310
+ipo p_shutdown, ax
+cmp ax, 400
+jne !boom
+opo p_shutdown, 100
+; fire a bit to get a high enough heat
+opo p_trotate, 128
+opo 15
+opo 15
+opo 15
+opo 15
+opo 15 ; 20 * 5 = 100, 20 * 6 just above
+opo 15
+ipo p_heat, dx
+opo p_trotate, -128
+; Resumes running only when we're at the correct heat
+mov bx, dx
+cmp dx, 50	; but usually 86 or 85 in ATR2? What gives? Probably something
+		; with quant where it cools down for all 5 cpu cycles in one
+		; go. Now is 87 in native, probably for the same reason, which
+		; we'll have to fix by doing some sort of clever interleaving
+		; Fixed by not firing more than 4 times.
+neg bx		; -x where x > 50: cue that it failed this test.
+jgr !boom
+
+; Check mines: we start off with 2 onboard and 0 on level. We lay both and
+; the situation should have reversed.
+err dx
+mov bx, 311
+ipo p_minelayer, ax
+cmp ax, 2
+jne !boom
+ipo p_minetrigger, ax
+cmp ax, 0
+jne !boom
+opo p_minelayer, 0	; radii - we don't want any explosions
+opo p_minelayer, 0
+ipo p_minelayer, ax
+cmp ax, 0
+jne !boom
+ipo p_minetrigger, ax
+cmp ax, 2
+jne !boom
+; We already know "trigger an explosion" works.
+
+; Check comms setting
+err -13
+mov bx, 312
+opo p_channel, 1812
+ipo p_channel, ax
+cmp ax, 1812
+jne !boom
+
+; Only the shield is left. We don't have shields, so check that it can't be
+; turned on. XXX: #config shields=3 (sacrifice heatsinks), implement #config
+; reading in reimp and check shields properly. The right way would be to note
+; damage with and without, and to check that heat only goes up when shield is
+; on.
+mov bx, 313
+opo p_shield, 1
+ipo p_shield, ax
+cmp ax, 1
+jne !boom
+opo p_shield, 0
+
+!f
+error 333 ;done
+!q
+jmp !q
